@@ -32,7 +32,15 @@ impl UiPresenter {
             model: UiViewModel::default(),
         }
     }
+}
 
+impl Default for UiPresenter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl UiPresenter {
     pub fn model(&self) -> &UiViewModel {
         &self.model
     }

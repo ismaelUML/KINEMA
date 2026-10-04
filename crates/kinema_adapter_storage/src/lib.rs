@@ -44,8 +44,8 @@ impl KinFileStorage {
                     current_v = 0.0;
                 }
 
-                if section.starts_with("body.") {
-                    current_body_id = Some(section["body.".len()..].to_string());
+                if let Some(stripped) = section.strip_prefix("body.") {
+                    current_body_id = Some(stripped.to_string());
                 }
                 continue;
             }
@@ -121,14 +121,17 @@ impl SceneRepository for KinFileStorage {
             return Err("File exceeds 1 MiB limit".to_string());
         }
 
-        let content = fs::read_to_string(path).map_err(|e| format!("Could not read file: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Could not read file: {}", e))?;
         self.parse_str(&content)
     }
 
     fn save(&self, path: &str, scene: &Scene) -> Result<(), String> {
         let content = self.serialize_scene(scene);
-        let mut file = fs::File::create(path).map_err(|e| format!("Could not create file: {}", e))?;
-        file.write_all(content.as_bytes()).map_err(|e| format!("Could not write file: {}", e))?;
+        let mut file =
+            fs::File::create(path).map_err(|e| format!("Could not create file: {}", e))?;
+        file.write_all(content.as_bytes())
+            .map_err(|e| format!("Could not write file: {}", e))?;
         Ok(())
     }
 }

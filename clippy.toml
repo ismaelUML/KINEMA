@@ -1,4 +1,3 @@
 # Clippy configuration for strict quality rules (CC <= 5 target)
 cognitive-complexity-threshold = 5
-cyclomatic-complexity-threshold = 5
 too-many-lines-threshold = 110

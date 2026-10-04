@@ -12,7 +12,10 @@ impl CliRunner {
         for body in &scene.bodies {
             let x = body.motion.position_at(time);
             let v = body.motion.velocity_at(time);
-            report.push(format!(" - Body {}: x = {:.2} m, v = {:.2} m/s", body.name, x, v));
+            report.push(format!(
+                " - Body {}: x = {:.2} m, v = {:.2} m/s",
+                body.name, x, v
+            ));
         }
         report
     }

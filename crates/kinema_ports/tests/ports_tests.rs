@@ -13,7 +13,9 @@ impl SnapshotSink for MockSink {
 
 #[test]
 fn test_snapshot_sink_port() {
-    let mut sink = MockSink { received_time: None };
+    let mut sink = MockSink {
+        received_time: None,
+    };
     let scene = Scene::new("Test");
     sink.consume_snapshot(&scene, 1.25);
     assert_eq!(sink.received_time, Some(1.25));
