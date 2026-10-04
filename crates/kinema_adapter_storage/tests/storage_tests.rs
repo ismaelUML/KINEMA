@@ -301,3 +301,66 @@ friction_mu = 0.2
     assert_eq!(roundtripped.ropes[0].nodes.len(), 24);
     assert!(roundtripped.ropes[0].nodes[23].pinned);
 }
+
+#[test]
+fn test_png_export_success_and_valid_structure() {
+    use kinema_adapter_storage::PngCanvasExporter;
+    use kinema_domain::motion::Mru;
+    use kinema_domain::scene::{Body, Scene};
+    use kinema_ports::{CancellationToken, ImageExporter};
+    use std::fs;
+
+    let mut scene = Scene::new("Export Test Scene");
+    let car = Body::new("car1", "Car 1", Mru::new(0.0, 10.0));
+    scene.add_body(car);
+
+    let exporter = PngCanvasExporter::new(320, 240);
+    let token = CancellationToken::new();
+    let out_path = std::env::temp_dir().join("kinema_test_export.png");
+    let out_str = out_path.to_str().unwrap();
+
+    let result = exporter.export_png(&scene, 2.0, out_str, &token);
+    assert!(result.is_ok(), "PNG export failed: {:?}", result);
+
+    let bytes = fs::read(&out_path).expect("Read exported PNG");
+    assert!(bytes.len() > 64);
+    // Check PNG signature: 89 50 4E 47 0D 0A 1A 0A
+    assert_eq!(&bytes[0..8], &[137, 80, 78, 71, 13, 10, 26, 10]);
+    // Check IHDR chunk
+    assert_eq!(&bytes[12..16], b"IHDR");
+    let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
+    let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
+    assert_eq!(width, 320);
+    assert_eq!(height, 240);
+    assert_eq!(bytes[24], 8); // bit depth 8
+    assert_eq!(bytes[25], 2); // color type RGB
+
+    // Check IEND chunk at end
+    let len = bytes.len();
+    assert_eq!(&bytes[len - 8..len - 4], b"IEND");
+
+    let _ = fs::remove_file(&out_path);
+}
+
+#[test]
+fn test_png_export_cancellation_cleans_up_file() {
+    use kinema_adapter_storage::PngCanvasExporter;
+    use kinema_domain::scene::Scene;
+    use kinema_ports::{CancellationToken, ImageExporter};
+
+    let scene = Scene::new("Cancelled Scene");
+    let exporter = PngCanvasExporter::new(640, 480);
+    let token = CancellationToken::new();
+    token.cancel(); // Cancel immediately
+
+    let out_path = std::env::temp_dir().join("kinema_cancelled_export.png");
+    let out_str = out_path.to_str().unwrap();
+
+    let result = exporter.export_png(&scene, 0.0, out_str, &token);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), "Export cancelled by user");
+
+    // Must clean up any temporary or target files
+    assert!(!out_path.exists(), "Target file must not exist after cancellation");
+}
+

@@ -7,6 +7,9 @@ use kinema_ports::SceneRepository;
 use std::fs;
 use std::io::Write;
 
+pub mod png_export;
+pub use png_export::{CanvasBuffer, PngCanvasExporter};
+
 pub const MAX_FILE_SIZE_BYTES: u64 = 1024 * 1024; // 1 MiB
 pub const MAX_BODIES_COUNT: usize = 256;
 
