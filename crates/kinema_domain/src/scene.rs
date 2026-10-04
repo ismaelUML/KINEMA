@@ -1,6 +1,7 @@
 //! Scene model containing bodies and constants.
 
 use crate::motion::Motion;
+use crate::rope::ParticleRope;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Body {
@@ -24,6 +25,7 @@ pub struct Scene {
     pub name: String,
     pub gravity: f64,
     pub bodies: Vec<Body>,
+    pub ropes: Vec<ParticleRope>,
 }
 
 impl Default for Scene {
@@ -32,6 +34,7 @@ impl Default for Scene {
             name: "Default Scene".to_string(),
             gravity: 9.80665,
             bodies: Vec::new(),
+            ropes: Vec::new(),
         }
     }
 }
@@ -42,10 +45,15 @@ impl Scene {
             name: name.to_string(),
             gravity: 9.80665,
             bodies: Vec::new(),
+            ropes: Vec::new(),
         }
     }
 
     pub fn add_body(&mut self, body: Body) {
         self.bodies.push(body);
+    }
+
+    pub fn add_rope(&mut self, rope: ParticleRope) {
+        self.ropes.push(rope);
     }
 }

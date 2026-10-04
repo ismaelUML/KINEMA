@@ -311,14 +311,17 @@ impl ParametricLaw for Mvl {
 }
 
 use crate::dynamics::{BlockDynamics, FreeBodyDiagram};
+use crate::pulley::{AtwoodMachine, TablePulleySystem};
 
-/// Dynamic motion discriminator supporting MRU, MRUV, MVL, and Dynamics.
+/// Dynamic motion discriminator supporting MRU, MRUV, MVL, Dynamics, and Pulley systems.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Motion {
     Mru(Mru),
     Mruv(Mruv),
     Mvl(Mvl),
     Dynamics(BlockDynamics),
+    Atwood(AtwoodMachine),
+    TablePulley(TablePulleySystem),
 }
 
 impl Motion {
@@ -328,6 +331,7 @@ impl Motion {
             Motion::Mruv(m) => m.stopping_time(),
             Motion::Mvl(m) => m.time_to_apex(),
             Motion::Dynamics(d) => d.stopping_time(),
+            Motion::Atwood(_) | Motion::TablePulley(_) => None,
         }
     }
 
@@ -357,6 +361,15 @@ impl Motion {
             _ => None,
         }
     }
+
+    /// Tension in rope if this motion represents an ideal pulley system.
+    pub fn pulley_tension(&self) -> Option<f64> {
+        match self {
+            Motion::Atwood(a) => Some(a.tension()),
+            Motion::TablePulley(p) => Some(p.tension()),
+            _ => None,
+        }
+    }
 }
 
 impl Motion1D for Motion {
@@ -366,6 +379,8 @@ impl Motion1D for Motion {
             Motion::Mruv(m) => m.position_at(t),
             Motion::Mvl(m) => m.position_at(t),
             Motion::Dynamics(d) => d.position_at(t),
+            Motion::Atwood(a) => a.position_at(t),
+            Motion::TablePulley(p) => p.position_at(t),
         }
     }
 
@@ -375,6 +390,8 @@ impl Motion1D for Motion {
             Motion::Mruv(m) => m.velocity_at(t),
             Motion::Mvl(m) => m.velocity_at(t),
             Motion::Dynamics(d) => d.velocity_at(t),
+            Motion::Atwood(a) => a.velocity_at(t),
+            Motion::TablePulley(p) => p.velocity_at(t),
         }
     }
 
@@ -384,6 +401,8 @@ impl Motion1D for Motion {
             Motion::Mruv(m) => m.acceleration_at(t),
             Motion::Mvl(m) => m.acceleration_at(t),
             Motion::Dynamics(d) => d.acceleration_at(t),
+            Motion::Atwood(a) => a.acceleration_at(t),
+            Motion::TablePulley(p) => p.acceleration_at(t),
         }
     }
 }
@@ -395,6 +414,8 @@ impl ParametricLaw for Motion {
             Motion::Mruv(m) => m.formula_text(),
             Motion::Mvl(m) => m.formula_text(),
             Motion::Dynamics(d) => d.formula_text(),
+            Motion::Atwood(a) => a.formula_text(),
+            Motion::TablePulley(p) => p.formula_text(),
         }
     }
 
@@ -404,6 +425,8 @@ impl ParametricLaw for Motion {
             Motion::Mruv(m) => m.parameters(),
             Motion::Mvl(m) => m.parameters(),
             Motion::Dynamics(d) => d.parameters(),
+            Motion::Atwood(a) => a.parameters(),
+            Motion::TablePulley(p) => p.parameters(),
         }
     }
 
@@ -413,6 +436,8 @@ impl ParametricLaw for Motion {
             Motion::Mruv(m) => m.set_parameter(name, value),
             Motion::Mvl(m) => m.set_parameter(name, value),
             Motion::Dynamics(d) => d.set_parameter(name, value),
+            Motion::Atwood(a) => a.set_parameter(name, value),
+            Motion::TablePulley(p) => p.set_parameter(name, value),
         }
     }
 }
@@ -438,5 +463,17 @@ impl From<Mvl> for Motion {
 impl From<BlockDynamics> for Motion {
     fn from(d: BlockDynamics) -> Self {
         Motion::Dynamics(d)
+    }
+}
+
+impl From<AtwoodMachine> for Motion {
+    fn from(a: AtwoodMachine) -> Self {
+        Motion::Atwood(a)
+    }
+}
+
+impl From<TablePulleySystem> for Motion {
+    fn from(p: TablePulleySystem) -> Self {
+        Motion::TablePulley(p)
     }
 }

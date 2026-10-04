@@ -4,6 +4,8 @@
 pub mod dynamics;
 pub mod meeting;
 pub mod motion;
+pub mod pulley;
+pub mod rope;
 pub mod scene;
 
 pub use dynamics::{BlockDynamics, FreeBodyDiagram, FrictionState};
@@ -12,4 +14,6 @@ pub use meeting::{
     Roots,
 };
 pub use motion::{GravityPreset, Motion, Motion1D, Mru, Mruv, Mvl, ParametricLaw};
+pub use pulley::{AtwoodMachine, TablePulleySystem};
+pub use rope::{ParticleRope, RopeNode};
 pub use scene::{Body, Scene};
