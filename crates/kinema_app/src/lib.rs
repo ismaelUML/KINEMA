@@ -1,8 +1,8 @@
 //! Application Layer / Use Case Orchestration.
 
 use kinema_domain::{
-    analyze_meeting, Body, GravityPreset, MeetingOutcome, Motion, Motion1D, Mru, Mruv, Mvl,
-    ParametricLaw, Scene,
+    analyze_meeting, BlockDynamics, Body, FreeBodyDiagram, GravityPreset, MeetingOutcome, Motion,
+    Motion1D, Mru, Mruv, Mvl, ParametricLaw, Scene,
 };
 use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
 
@@ -109,6 +109,20 @@ impl SimulationService {
                 b.motion
                     .ground_impact()
                     .map(|(t_i, v_i)| (b.id.clone(), t_i, v_i))
+            })
+            .collect()
+    }
+
+    /// Evaluates the Free-Body Diagram snapshot for all dynamic bodies at the current simulation time.
+    pub fn free_body_diagrams(&self) -> Vec<(String, FreeBodyDiagram)> {
+        self.scene
+            .bodies
+            .iter()
+            .filter_map(|b| {
+                let v = b.motion.velocity_at(self.time);
+                b.motion
+                    .free_body_diagram(v)
+                    .map(|fbd| (b.id.clone(), fbd))
             })
             .collect()
     }
@@ -252,6 +266,9 @@ impl ScenarioCatalog for SimulationService {
             "20m_free_fall".to_string(),
             "feather_and_hammer_moon".to_string(),
             "vertical_projectile".to_string(),
+            "block_friction_threshold".to_string(),
+            "incline_plane_slide".to_string(),
+            "heavy_crate_push".to_string(),
         ]
     }
 
@@ -268,6 +285,11 @@ impl ScenarioCatalog for SimulationService {
             "vertical_projectile" | "Vertical projectile launch (Earth)" => {
                 build_vertical_projectile_scenario()
             }
+            "block_friction_threshold" | "Block with friction threshold" => {
+                build_block_friction_scenario()
+            }
+            "incline_plane_slide" | "Incline plane sliding angle" => build_incline_slide_scenario(),
+            "heavy_crate_push" | "Heavy crate push" => build_heavy_crate_scenario(),
             _ => return Err(format!("Unknown scenario '{}'", name)),
         };
         self.push_undo();
@@ -354,6 +376,46 @@ fn build_vertical_projectile_scenario() -> Scene {
         "rock",
         "Launched Rock (v0=20 m/s)",
         Mvl::new(0.0, 20.0, g),
+    ));
+    scene
+}
+
+fn build_block_friction_scenario() -> Scene {
+    let mut scene = Scene::new("Block with friction threshold");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    let block = BlockDynamics::horizontal(5.0, 0.5, 0.3, 20.0).with_gravity(g);
+    scene.add_body(Body::new(
+        "block",
+        "Block (5kg, μs=0.5, μk=0.3, F=20N)",
+        block,
+    ));
+    scene
+}
+
+fn build_incline_slide_scenario() -> Scene {
+    let mut scene = Scene::new("Incline plane sliding angle");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    let theta = 30.0_f64.to_radians();
+    let block = BlockDynamics::new(2.0, theta, 0.6, 0.4).with_gravity(g);
+    scene.add_body(Body::new(
+        "slider",
+        "Block on 30° Incline (μs=0.6, μk=0.4)",
+        block,
+    ));
+    scene
+}
+
+fn build_heavy_crate_scenario() -> Scene {
+    let mut scene = Scene::new("Heavy crate push");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    let crate_body = BlockDynamics::horizontal(50.0, 0.4, 0.25, 250.0).with_gravity(g);
+    scene.add_body(Body::new(
+        "crate",
+        "Heavy Crate (50kg, F=250N)",
+        crate_body,
     ));
     scene
 }

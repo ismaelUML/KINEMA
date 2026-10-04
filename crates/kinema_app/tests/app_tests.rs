@@ -224,3 +224,56 @@ fn test_m3_vertical_projectile_apex_and_curves() {
     assert!((v_curve.points[0].position - 20.0).abs() < 1e-6);
     assert!(v_curve.points[1].position.abs() < 1e-3);
 }
+
+#[test]
+fn test_m4_block_friction_threshold_scenario() {
+    use kinema_domain::FrictionState;
+    use kinema_ports::{ScenarioCatalog, SceneEditing};
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("block_friction_threshold")
+        .expect("load block friction");
+
+    // Initially F_app = 20 N <= 24.525 N => Static
+    let fbds = service.free_body_diagrams();
+    assert_eq!(fbds.len(), 1);
+    let (id, fbd) = &fbds[0];
+    assert_eq!(id, "block");
+    assert_eq!(fbd.state, FrictionState::Static);
+    assert_eq!(fbd.net_force, 0.0);
+
+    // Edit F_app to 30 N > 24.525 N => Kinetic acceleration
+    service
+        .edit_parameter("block", "f_app", 30.0)
+        .expect("edit f_app");
+    let updated_fbds = service.free_body_diagrams();
+    assert_eq!(updated_fbds[0].1.state, FrictionState::Kinetic);
+    assert!((updated_fbds[0].1.net_force - 15.285).abs() < 1e-3);
+}
+
+#[test]
+fn test_m4_incline_plane_slide_scenario() {
+    use kinema_domain::FrictionState;
+    use kinema_ports::{ScenarioCatalog, SceneEditing};
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("incline_plane_slide")
+        .expect("load incline");
+
+    // Initially theta = 30 deg => Static
+    let fbds = service.free_body_diagrams();
+    assert_eq!(fbds[0].1.state, FrictionState::Static);
+
+    // Edit angle to 45 deg => Slides down incline
+    service
+        .edit_parameter("slider", "theta_deg", 45.0)
+        .expect("edit theta");
+    let updated_fbds = service.free_body_diagrams();
+    assert_eq!(updated_fbds[0].1.state, FrictionState::Kinetic);
+    assert!(updated_fbds[0].1.net_force < 0.0);
+}
+
