@@ -225,3 +225,79 @@ fn test_ui_presenter_m5_rope_views_and_color_ramp() {
         assert!(seg.tension_ratio >= 0.0 && seg.tension_ratio <= 1.0);
     }
 }
+
+#[test]
+fn test_ui_presenter_m6_themes_palette_swap() {
+    use kinema_adapter_ui::UiTheme;
+
+    let mut presenter = UiPresenter::new();
+    let scene = Scene::new("Themed Scene");
+
+    // 1. Default Classic Theme
+    presenter.consume_snapshot(&scene, 0.0);
+    assert_eq!(presenter.model().active_theme, UiTheme::Classic);
+    assert_eq!(presenter.model().palette.window_face, "#C0C0C0");
+    assert_eq!(presenter.model().palette.title_bg, "#000080");
+
+    // 2. Phosphor Theme (#33FF33 on black)
+    presenter.set_theme(UiTheme::Phosphor);
+    presenter.consume_snapshot(&scene, 0.0);
+    assert_eq!(presenter.model().active_theme, UiTheme::Phosphor);
+    assert_eq!(presenter.model().palette.window_face, "#000000");
+    assert_eq!(presenter.model().palette.text_primary, "#33FF33");
+
+    // 3. Amber Theme (#FFB000 on black)
+    presenter.set_theme(UiTheme::Amber);
+    presenter.consume_snapshot(&scene, 0.0);
+    assert_eq!(presenter.model().active_theme, UiTheme::Amber);
+    assert_eq!(presenter.model().palette.window_face, "#000000");
+    assert_eq!(presenter.model().palette.text_primary, "#FFB000");
+}
+
+#[test]
+fn test_ui_presenter_m6_help_system_dialogs() {
+    use kinema_adapter_ui::HelpTopic;
+
+    let mut presenter = UiPresenter::new();
+
+    // 1. F1 Contents
+    presenter.open_help(HelpTopic::Contents);
+    assert!(presenter.model().help_dialog_open);
+    assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::Contents));
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("Keyboard Shortcuts"));
+
+    // 2. Equation Reference
+    presenter.open_help(HelpTopic::EquationReference);
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("M1 - MRU"));
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("M5 - Atwood Machine"));
+
+    // 3. About Dialog
+    presenter.open_help(HelpTopic::About);
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("Old but functional"));
+
+    // 4. Close Dialog
+    presenter.close_help();
+    assert!(!presenter.model().help_dialog_open);
+    assert!(presenter.model().help_text.is_none());
+}
+
+#[test]
+fn test_ui_presenter_m6_menu_structure() {
+    let presenter = UiPresenter::new();
+    let menus = &presenter.model().menus;
+
+    assert_eq!(menus.len(), 6);
+    let titles: Vec<&str> = menus.iter().map(|m| m.title.as_str()).collect();
+    assert_eq!(titles, vec!["File", "Edit", "View", "Simulate", "Scene", "Help"]);
+
+    let file_menu = &menus[0];
+    let file_actions: Vec<&str> = file_menu.items.iter().map(|i| i.action_id.as_str()).collect();
+    assert!(file_actions.contains(&"file.new"));
+    assert!(file_actions.contains(&"file.export_png"));
+
+    let help_menu = &menus[5];
+    let help_actions: Vec<&str> = help_menu.items.iter().map(|i| i.action_id.as_str()).collect();
+    assert!(help_actions.contains(&"help.contents"));
+    assert!(help_actions.contains(&"help.equations"));
+}
+

@@ -127,6 +127,115 @@ pub struct UiGraphSeries {
     pub points: Vec<(f64, f64)>,
 }
 
+/// Theme palette configuration according to Section 5.5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UiTheme {
+    #[default]
+    Classic,
+    Phosphor,
+    Amber,
+}
+
+impl UiTheme {
+    pub fn palette(&self) -> UiColorPalette {
+        match self {
+            UiTheme::Classic => default_classic_palette(),
+            UiTheme::Phosphor => default_phosphor_palette(),
+            UiTheme::Amber => default_amber_palette(),
+        }
+    }
+}
+
+/// Palette tokens for UI windows, bevels, canvases, and vectors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiColorPalette {
+    pub window_face: String,
+    pub bevel_light: String,
+    pub bevel_dark: String,
+    pub title_bg: String,
+    pub title_fg: String,
+    pub canvas_bg: String,
+    pub canvas_grid: String,
+    pub body_a: String,
+    pub body_b: String,
+    pub vector_velocity: String,
+    pub vector_acceleration: String,
+    pub vector_force: String,
+    pub text_primary: String,
+}
+
+/// Help topics available in the help system (Section 5.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HelpTopic {
+    #[default]
+    Contents,
+    EquationReference,
+    About,
+}
+
+impl HelpTopic {
+    pub fn title(&self) -> &'static str {
+        match self {
+            HelpTopic::Contents => "KINEMA Help Contents (F1)",
+            HelpTopic::EquationReference => "Equation Reference",
+            HelpTopic::About => "About KINEMA",
+        }
+    }
+
+    pub fn content(&self) -> &'static str {
+        match self {
+            HelpTopic::Contents => {
+                "KINEMA Desktop Physics Workbench\n\n\
+                 Keyboard Shortcuts:\n\
+                   Space      Play / Pause simulation\n\
+                   Right      Step forward (1/60 s)\n\
+                   Left       Step backward (1/60 s)\n\
+                   Home       Reset to t = 0\n\
+                   Ctrl+Z     Undo last parameter edit\n\
+                   Ctrl+Y     Redo last parameter edit\n\
+                   F1         Open Help Contents\n\
+                   Ctrl+E     Export scene as PNG image\n\n\
+                 Mouse Interaction:\n\
+                   Drag body to change initial position x0.\n\
+                   Drag arrow head to mutate initial velocity or applied force."
+            }
+            HelpTopic::EquationReference => {
+                "KINEMA Equation Catalog:\n\n\
+                 M1 - MRU:            x(t) = x0 + v·t, a = 0\n\
+                 M2 - MRUV:           x(t) = x0 + v0·t + ½·a·t², v(t) = v0 + a·t\n\
+                 M3 - Free Fall:      y(t) = y0 + v0·t - ½·g·t², v(t) = v0 - g·t\n\
+                 M4 - Friction:       F_net = F_app - mg·sin(θ) - f_roz, f_roz = μ·N\n\
+                 M5 - Atwood Machine: a = (m2 - m1)·g / (m1 + m2), T = 2·m1·m2·g / (m1 + m2)\n\
+                 M5 - Table Pulley:   a = (m2·g - μ_k·m1·g) / (m1 + m2), T = m1·(a + μ_k·g)\n\
+                 M5 - Particle Rope:  Verlet x_{n+1} = 2·x_n - x_{n-1} + a·dt², 12 relaxation passes"
+            }
+            HelpTopic::About => {
+                "KINEMA - Interactive Desktop Physics Workbench\n\
+                 Version 0.1.0 (Revision 0.1)\n\n\
+                 Design Philosophy: 'Old but functional'\n\
+                 Architecture: Pure Hexagonal Core + Adapters\n\
+                 Engineered with Rust, zero warnings, CC <= 5, and SQALE clean architecture.\n\
+                 License: MIT / Apache-2.0"
+            }
+        }
+    }
+}
+
+/// Single item in the application menu bar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiMenuItem {
+    pub label: String,
+    pub shortcut: Option<String>,
+    pub action_id: String,
+}
+
+/// Menu tree node for classic desktop menu bar.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiMenu {
+    pub title: String,
+    pub items: Vec<UiMenuItem>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiViewModel {
     pub window_title: String,
@@ -142,6 +251,12 @@ pub struct UiViewModel {
     pub fbd_views: Vec<UiFbdView>,
     pub pulley_views: Vec<UiPulleyView>,
     pub rope_views: Vec<UiRopeView>,
+    pub active_theme: UiTheme,
+    pub palette: UiColorPalette,
+    pub menus: Vec<UiMenu>,
+    pub help_dialog_open: bool,
+    pub current_help_topic: Option<HelpTopic>,
+    pub help_text: Option<String>,
     pub status_message: String,
 }
 
@@ -161,6 +276,12 @@ impl Default for UiViewModel {
             fbd_views: Vec::new(),
             pulley_views: Vec::new(),
             rope_views: Vec::new(),
+            active_theme: UiTheme::Classic,
+            palette: default_classic_palette(),
+            menus: build_default_menu_bar(),
+            help_dialog_open: false,
+            current_help_topic: None,
+            help_text: None,
             status_message: "Ready.".to_string(),
         }
     }
@@ -168,12 +289,14 @@ impl Default for UiViewModel {
 
 pub struct UiPresenter {
     model: UiViewModel,
+    theme: UiTheme,
 }
 
 impl UiPresenter {
     pub fn new() -> Self {
         Self {
             model: UiViewModel::default(),
+            theme: UiTheme::Classic,
         }
     }
 }
@@ -196,12 +319,32 @@ impl UiPresenter {
     pub fn set_graph_kind(&mut self, kind: GraphKind) {
         self.model.active_graph_kind = kind;
     }
+
+    pub fn set_theme(&mut self, theme: UiTheme) {
+        self.theme = theme;
+        self.model.active_theme = theme;
+        self.model.palette = theme.palette();
+    }
+
+    pub fn open_help(&mut self, topic: HelpTopic) {
+        self.model.help_dialog_open = true;
+        self.model.current_help_topic = Some(topic);
+        self.model.help_text = Some(topic.content().to_string());
+    }
+
+    pub fn close_help(&mut self) {
+        self.model.help_dialog_open = false;
+        self.model.current_help_topic = None;
+        self.model.help_text = None;
+    }
 }
 
 impl SnapshotSink for UiPresenter {
     fn consume_snapshot(&mut self, scene: &Scene, current_time: f64) {
         self.model.window_title = format!("KINEMA - [{}]", scene.name);
         self.model.current_time = current_time;
+        self.model.active_theme = self.theme;
+        self.model.palette = self.theme.palette();
         self.model.bodies = build_body_views(&scene.bodies, current_time);
 
         let (diag, markers) = compute_meeting_analysis(&scene.bodies);
@@ -530,3 +673,161 @@ pub fn tension_to_color_hex(ratio: f64) -> String {
     };
     format!("#{:02X}{:02X}{:02X}", red as u8, green as u8, blue as u8)
 }
+
+fn default_classic_palette() -> UiColorPalette {
+    UiColorPalette {
+        window_face: "#C0C0C0".to_string(),
+        bevel_light: "#FFFFFF".to_string(),
+        bevel_dark: "#808080".to_string(),
+        title_bg: "#000080".to_string(),
+        title_fg: "#FFFFFF".to_string(),
+        canvas_bg: "#000000".to_string(),
+        canvas_grid: "#555555".to_string(),
+        body_a: "#FF5555".to_string(),
+        body_b: "#55FFFF".to_string(),
+        vector_velocity: "#55FF55".to_string(),
+        vector_acceleration: "#FFFF55".to_string(),
+        vector_force: "#FF55FF".to_string(),
+        text_primary: "#000000".to_string(),
+    }
+}
+
+fn default_phosphor_palette() -> UiColorPalette {
+    UiColorPalette {
+        window_face: "#000000".to_string(),
+        bevel_light: "#33FF33".to_string(),
+        bevel_dark: "#115511".to_string(),
+        title_bg: "#113311".to_string(),
+        title_fg: "#33FF33".to_string(),
+        canvas_bg: "#000000".to_string(),
+        canvas_grid: "#115511".to_string(),
+        body_a: "#33FF33".to_string(),
+        body_b: "#66FF66".to_string(),
+        vector_velocity: "#33FF33".to_string(),
+        vector_acceleration: "#88FF88".to_string(),
+        vector_force: "#33FF33".to_string(),
+        text_primary: "#33FF33".to_string(),
+    }
+}
+
+fn default_amber_palette() -> UiColorPalette {
+    UiColorPalette {
+        window_face: "#000000".to_string(),
+        bevel_light: "#FFB000".to_string(),
+        bevel_dark: "#664400".to_string(),
+        title_bg: "#332200".to_string(),
+        title_fg: "#FFB000".to_string(),
+        canvas_bg: "#000000".to_string(),
+        canvas_grid: "#664400".to_string(),
+        body_a: "#FFB000".to_string(),
+        body_b: "#FFCC44".to_string(),
+        vector_velocity: "#FFB000".to_string(),
+        vector_acceleration: "#FFD066".to_string(),
+        vector_force: "#FFB000".to_string(),
+        text_primary: "#FFB000".to_string(),
+    }
+}
+
+fn make_menu(title: &str, items: &[(&str, Option<&str>, &str)]) -> UiMenu {
+    UiMenu {
+        title: title.to_string(),
+        items: items
+            .iter()
+            .map(|(label, shortcut, action)| UiMenuItem {
+                label: label.to_string(),
+                shortcut: shortcut.map(|s| s.to_string()),
+                action_id: action.to_string(),
+            })
+            .collect(),
+    }
+}
+
+fn build_default_menu_bar() -> Vec<UiMenu> {
+    vec![
+        make_file_menu(),
+        make_edit_menu(),
+        make_view_menu(),
+        make_simulate_menu(),
+        make_scene_menu(),
+        make_help_menu(),
+    ]
+}
+
+fn make_file_menu() -> UiMenu {
+    make_menu(
+        "File",
+        &[
+            ("New", Some("Ctrl+N"), "file.new"),
+            ("Open...", Some("Ctrl+O"), "file.open"),
+            ("Save", Some("Ctrl+S"), "file.save"),
+            ("Save As...", None, "file.save_as"),
+            ("Export Image (PNG)", Some("Ctrl+E"), "file.export_png"),
+            ("Exit", Some("Alt+F4"), "file.exit"),
+        ],
+    )
+}
+
+fn make_edit_menu() -> UiMenu {
+    make_menu(
+        "Edit",
+        &[
+            ("Undo", Some("Ctrl+Z"), "edit.undo"),
+            ("Redo", Some("Ctrl+Y"), "edit.redo"),
+            ("Duplicate Body", Some("Ctrl+D"), "edit.duplicate"),
+            ("Delete Body", Some("Del"), "edit.delete"),
+            ("Preferences...", None, "edit.preferences"),
+        ],
+    )
+}
+
+fn make_view_menu() -> UiMenu {
+    make_menu(
+        "View",
+        &[
+            ("Equation Panel", None, "view.equations"),
+            ("Graph Panel", None, "view.graphs"),
+            ("Inspector", None, "view.inspector"),
+            ("Theme: Classic", None, "theme.classic"),
+            ("Theme: Phosphor", None, "theme.phosphor"),
+            ("Theme: Amber", None, "theme.amber"),
+        ],
+    )
+}
+
+fn make_simulate_menu() -> UiMenu {
+    make_menu(
+        "Simulate",
+        &[
+            ("Play / Pause", Some("Space"), "sim.play_pause"),
+            ("Step Forward", Some("Right"), "sim.step_fwd"),
+            ("Step Backward", Some("Left"), "sim.step_back"),
+            ("Reset", Some("Home"), "sim.reset"),
+        ],
+    )
+}
+
+fn make_scene_menu() -> UiMenu {
+    make_menu(
+        "Scene",
+        &[
+            ("Add Vehicle", None, "scene.add_vehicle"),
+            ("Add Falling Object", None, "scene.add_falling"),
+            ("Add Block", None, "scene.add_block"),
+            ("Add Surface / Incline", None, "scene.add_incline"),
+            ("Add Rope", None, "scene.add_rope"),
+            ("Add Pulley", None, "scene.add_pulley"),
+        ],
+    )
+}
+
+fn make_help_menu() -> UiMenu {
+    make_menu(
+        "Help",
+        &[
+            ("Contents (F1)", Some("F1"), "help.contents"),
+            ("Equation Reference", None, "help.equations"),
+            ("About KINEMA", None, "help.about"),
+        ],
+    )
+}
+
