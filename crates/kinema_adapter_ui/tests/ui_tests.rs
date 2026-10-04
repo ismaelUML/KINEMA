@@ -21,16 +21,8 @@ fn test_ui_presenter_m1_formulas_markers_and_graphs() {
 
     let mut presenter = UiPresenter::new();
     let mut scene = Scene::new("Two cars meeting");
-    scene.add_body(Body {
-        id: "car_a".to_string(),
-        name: "Car A".to_string(),
-        motion: Mru::new(0.0, 15.0),
-    });
-    scene.add_body(Body {
-        id: "car_b".to_string(),
-        name: "Car B".to_string(),
-        motion: Mru::new(100.0, -10.0),
-    });
+    scene.add_body(Body::new("car_a", "Car A", Mru::new(0.0, 15.0)));
+    scene.add_body(Body::new("car_b", "Car B", Mru::new(100.0, -10.0)));
 
     presenter.consume_snapshot(&scene, 2.0);
 
@@ -55,4 +47,41 @@ fn test_ui_presenter_m1_formulas_markers_and_graphs() {
     assert_eq!(model.graph_series.len(), 2);
     assert_eq!(model.graph_series[0].points.len(), 11);
     assert_eq!(model.graph_series[1].points.len(), 11);
+}
+
+#[test]
+fn test_ui_presenter_m2_mruv_stopping_and_velocity_graph() {
+    use kinema_adapter_ui::GraphKind;
+    use kinema_domain::motion::{Mru, Mruv};
+    use kinema_domain::scene::Body;
+
+    let mut presenter = UiPresenter::new();
+    let mut scene = Scene::new("MRU vs MRUV");
+    scene.add_body(Body::new("car_a", "Car A", Mru::new(0.0, 15.0)));
+    scene.add_body(Body::new("car_b", "Car B", Mruv::new(100.0, -10.0, 2.0)));
+
+    presenter.set_graph_kind(GraphKind::VelocityTime);
+    presenter.consume_snapshot(&scene, 5.0);
+
+    let model = presenter.model();
+    assert_eq!(model.bodies.len(), 2);
+    assert_eq!(
+        model.bodies[1].formula_text,
+        "x(t) = 100.00 - 10.00 · t + 1.00 · t²"
+    );
+    assert_eq!(model.bodies[1].stopping_time, Some(5.0));
+
+    // Two roots meeting markers (t=5s and t=20s)
+    assert_eq!(model.meeting_markers.len(), 2);
+    assert_eq!(model.meeting_markers[0].time, 5.0);
+    assert_eq!(model.meeting_markers[1].time, 20.0);
+
+    // Stopping marker
+    assert_eq!(model.stopping_markers.len(), 1);
+    assert_eq!(model.stopping_markers[0].time, 5.0);
+    assert_eq!(model.stopping_markers[0].position, 75.0);
+
+    // Velocity graph series
+    assert_eq!(model.graph_series.len(), 2);
+    assert_eq!(model.active_graph_kind, GraphKind::VelocityTime);
 }
