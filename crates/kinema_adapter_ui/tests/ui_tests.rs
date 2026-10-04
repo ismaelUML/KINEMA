@@ -144,3 +144,25 @@ fn test_ui_presenter_m3_vertical_projectile_apex_and_impact() {
     assert!((impact.time - (40.0 / 9.81)).abs() < 1e-4);
     assert!((impact.speed - 20.0).abs() < 1e-4);
 }
+
+#[test]
+fn test_ui_presenter_m4_dynamics_fbd() {
+    use kinema_domain::dynamics::BlockDynamics;
+    use kinema_domain::scene::Body;
+
+    let mut presenter = UiPresenter::new();
+    let mut scene = Scene::new("FBD Inspection");
+    let block = BlockDynamics::horizontal(5.0, 0.5, 0.3, 20.0).with_gravity(9.81);
+    scene.add_body(Body::new("box", "Test Box", block));
+
+    presenter.consume_snapshot(&scene, 0.0);
+
+    let model = presenter.model();
+    assert_eq!(model.fbd_views.len(), 1);
+    let fbd_view = &model.fbd_views[0];
+    assert_eq!(fbd_view.body_id, "box");
+    assert_eq!(fbd_view.friction_state, "STATIC");
+    assert_eq!(fbd_view.net_force, 0.0);
+    assert_eq!(fbd_view.arrows.len(), 4);
+}
+

@@ -1,7 +1,6 @@
-//! Driving/Presenter Adapter: UI State, rendering abstractions, and presenter sink.
-
 use kinema_domain::{
-    analyze_meeting, Body, MeetingInstant, MeetingOutcome, Motion1D, ParametricLaw, Scene,
+    analyze_meeting, Body, FreeBodyDiagram, FrictionState, MeetingInstant, MeetingOutcome,
+    Motion1D, ParametricLaw, Scene,
 };
 use kinema_ports::SnapshotSink;
 
@@ -65,6 +64,28 @@ pub struct UiImpactMarker {
     pub label: String,
 }
 
+/// Arrow representing a single force in the Free-Body Diagram.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiFbdArrow {
+    pub label: String,
+    pub magnitude: f64,
+    pub direction: String,
+}
+
+/// Free-Body Diagram view for the UI inspector.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiFbdView {
+    pub body_id: String,
+    pub friction_state: String,
+    pub net_force: f64,
+    pub weight: f64,
+    pub normal: f64,
+    pub friction: f64,
+    pub applied_force: f64,
+    pub gravity_parallel: f64,
+    pub arrows: Vec<UiFbdArrow>,
+}
+
 /// A series of points for plotting a kinematic line curve.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiGraphSeries {
@@ -85,6 +106,7 @@ pub struct UiViewModel {
     pub impact_markers: Vec<UiImpactMarker>,
     pub active_graph_kind: GraphKind,
     pub graph_series: Vec<UiGraphSeries>,
+    pub fbd_views: Vec<UiFbdView>,
     pub status_message: String,
 }
 
@@ -101,6 +123,7 @@ impl Default for UiViewModel {
             impact_markers: Vec::new(),
             active_graph_kind: GraphKind::PositionTime,
             graph_series: Vec::new(),
+            fbd_views: Vec::new(),
             status_message: "Ready.".to_string(),
         }
     }
@@ -150,6 +173,7 @@ impl SnapshotSink for UiPresenter {
         self.model.stopping_markers = build_stopping_markers(&scene.bodies);
         self.model.apex_markers = build_apex_markers(&scene.bodies);
         self.model.impact_markers = build_impact_markers(&scene.bodies);
+        self.model.fbd_views = build_fbd_views(&scene.bodies, current_time);
 
         let t_max = compute_graph_t_max(&self.model.meeting_markers, &self.model.impact_markers);
         self.model.graph_series =
@@ -241,6 +265,68 @@ fn build_impact_markers(bodies: &[Body]) -> Vec<UiImpactMarker> {
             })
         })
         .collect()
+}
+
+fn build_fbd_views(bodies: &[Body], current_time: f64) -> Vec<UiFbdView> {
+    bodies
+        .iter()
+        .filter_map(|b| {
+            let v = b.motion.velocity_at(current_time);
+            b.motion.free_body_diagram(v).map(|fbd| {
+                let state_str = match fbd.state {
+                    FrictionState::Static => "STATIC",
+                    FrictionState::Kinetic => "KINETIC",
+                };
+                let arrows = make_fbd_arrows(&fbd);
+                UiFbdView {
+                    body_id: b.id.clone(),
+                    friction_state: state_str.to_string(),
+                    net_force: fbd.net_force,
+                    weight: fbd.weight,
+                    normal: fbd.normal,
+                    friction: fbd.friction,
+                    applied_force: fbd.applied_force,
+                    gravity_parallel: fbd.gravity_parallel,
+                    arrows,
+                }
+            })
+        })
+        .collect()
+}
+
+fn make_fbd_arrows(fbd: &FreeBodyDiagram) -> Vec<UiFbdArrow> {
+    vec![
+        UiFbdArrow {
+            label: format!("W = {:.2} N", fbd.weight),
+            magnitude: fbd.weight,
+            direction: "downward".to_string(),
+        },
+        UiFbdArrow {
+            label: format!("N = {:.2} N", fbd.normal),
+            magnitude: fbd.normal,
+            direction: "normal to surface".to_string(),
+        },
+        UiFbdArrow {
+            label: format!("f_roz = {:.2} N", fbd.friction.abs()),
+            magnitude: fbd.friction.abs(),
+            direction: if fbd.friction >= 0.0 {
+                "up-slope"
+            } else {
+                "down-slope"
+            }
+            .to_string(),
+        },
+        UiFbdArrow {
+            label: format!("F_app = {:.2} N", fbd.applied_force.abs()),
+            magnitude: fbd.applied_force.abs(),
+            direction: if fbd.applied_force >= 0.0 {
+                "up-slope"
+            } else {
+                "down-slope"
+            }
+            .to_string(),
+        },
+    ]
 }
 
 fn compute_graph_t_max(
