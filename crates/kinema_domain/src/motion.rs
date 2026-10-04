@@ -36,3 +36,43 @@ impl Motion1D for Mru {
         0.0
     }
 }
+
+/// Allows UI panels and serializers to inspect and mutate parameters without
+/// hardcoding matching logic for every motion type out there.
+pub trait ParametricLaw {
+    /// Formats the law as mathematical text. Handles negative signs so we don't display 'x(t) = 0 + -10 * t'.
+    fn formula_text(&self) -> String;
+    /// Names and values of the parameters exposed to editors.
+    fn parameters(&self) -> Vec<(&'static str, f64)>;
+    /// Mutates a single parameter. Returns Err if someone mistypes the parameter key.
+    fn set_parameter(&mut self, name: &str, value: f64) -> Result<(), &'static str>;
+}
+
+impl ParametricLaw for Mru {
+    fn formula_text(&self) -> String {
+        // We branch on velocity sign specifically to avoid ugly '+ -10.0' in equations shown to users.
+        if self.v >= 0.0 {
+            format!("x(t) = {:.2} + {:.2} · t", self.x0, self.v)
+        } else {
+            format!("x(t) = {:.2} - {:.2} · t", self.x0, self.v.abs())
+        }
+    }
+
+    fn parameters(&self) -> Vec<(&'static str, f64)> {
+        vec![("x0", self.x0), ("v", self.v)]
+    }
+
+    fn set_parameter(&mut self, name: &str, value: f64) -> Result<(), &'static str> {
+        match name {
+            "x0" => {
+                self.x0 = value;
+                Ok(())
+            }
+            "v" => {
+                self.v = value;
+                Ok(())
+            }
+            _ => Err("unknown parameter"),
+        }
+    }
+}

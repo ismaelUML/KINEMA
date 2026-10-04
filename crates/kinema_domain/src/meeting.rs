@@ -1,5 +1,4 @@
-//! Meeting instant solver adhering strictly to CC <= 5.
-
+use crate::motion::{Motion1D, Mru};
 use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -91,5 +90,63 @@ fn stable_pair(q: Quadratic) -> (f64, f64) {
         (r1, r2)
     } else {
         (r2, r1)
+    }
+}
+
+/// Instant in time and space where two bodies collide or cross trajectories.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeetingInstant {
+    pub time: f64,
+    pub position: f64,
+    pub is_past: bool,
+}
+
+impl MeetingInstant {
+    pub fn new(time: f64, position: f64) -> Self {
+        Self {
+            time,
+            position,
+            is_past: time < 0.0,
+        }
+    }
+}
+
+/// Outcome of attempting to solve when two bodies meet.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MeetingOutcome {
+    CoincideAlways,
+    NeverMeet,
+    Single(MeetingInstant),
+    Dual(MeetingInstant, MeetingInstant),
+}
+
+impl MeetingOutcome {
+    /// Concise human-readable text for the UI inspector.
+    pub fn diagnostic_message(&self) -> &'static str {
+        match self {
+            MeetingOutcome::CoincideAlways => "Bodies coincide for all time",
+            MeetingOutcome::NeverMeet => "Bodies never meet",
+            MeetingOutcome::Single(inst) if inst.is_past => "Bodies met in the past",
+            MeetingOutcome::Single(_) => "Bodies meet at one instant",
+            MeetingOutcome::Dual(_, _) => "Bodies meet at two instants",
+        }
+    }
+}
+
+/// Solves linear meeting between two MRU motions: (v_a - v_b) * t + (x0_a - x0_b) = 0.
+pub fn analyze_mru_meeting(a: &Mru, b: &Mru) -> MeetingOutcome {
+    let q = Quadratic::new(0.0, a.v - b.v, a.x0 - b.x0);
+    match meeting_times(q) {
+        Roots::Infinite => MeetingOutcome::CoincideAlways,
+        Roots::None => MeetingOutcome::NeverMeet,
+        Roots::One(t) => {
+            let x = a.position_at(t);
+            MeetingOutcome::Single(MeetingInstant::new(t, x))
+        }
+        Roots::Two((t1, t2)) => {
+            let x1 = a.position_at(t1);
+            let x2 = a.position_at(t2);
+            MeetingOutcome::Dual(MeetingInstant::new(t1, x1), MeetingInstant::new(t2, x2))
+        }
     }
 }

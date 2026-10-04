@@ -5,6 +5,8 @@ pub mod meeting;
 pub mod motion;
 pub mod scene;
 
-pub use meeting::{meeting_times, Quadratic, Roots};
-pub use motion::Motion1D;
-pub use scene::Scene;
+pub use meeting::{
+    analyze_mru_meeting, meeting_times, MeetingInstant, MeetingOutcome, Quadratic, Roots,
+};
+pub use motion::{Motion1D, Mru, ParametricLaw};
+pub use scene::{Body, Scene};
