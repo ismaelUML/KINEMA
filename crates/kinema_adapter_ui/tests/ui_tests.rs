@@ -93,7 +93,11 @@ fn test_ui_presenter_m3_20m_drop_impact_marker() {
 
     let mut presenter = UiPresenter::new();
     let mut scene = Scene::new("20m Free Fall");
-    scene.add_body(Body::new("ball", "Dropping Ball", Mvl::new(20.0, 0.0, 9.81)));
+    scene.add_body(Body::new(
+        "ball",
+        "Dropping Ball",
+        Mvl::new(20.0, 0.0, 9.81),
+    ));
 
     presenter.consume_snapshot(&scene, 1.0);
 
@@ -140,4 +144,3 @@ fn test_ui_presenter_m3_vertical_projectile_apex_and_impact() {
     assert!((impact.time - (40.0 / 9.81)).abs() < 1e-4);
     assert!((impact.speed - 20.0).abs() < 1e-4);
 }
-

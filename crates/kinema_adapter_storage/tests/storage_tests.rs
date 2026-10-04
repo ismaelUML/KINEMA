@@ -84,7 +84,10 @@ fn test_reject_negative_gravity_in_scene() {
     let raw = "[scene]\ngravity = -9.81\n";
     let storage = KinFileStorage::new();
     let err = storage.parse_str(raw).unwrap_err();
-    assert!(err.contains("negative"), "expected negative error, got {err}");
+    assert!(
+        err.contains("negative"),
+        "expected negative error, got {err}"
+    );
 }
 
 #[test]
@@ -98,7 +101,10 @@ g = -9.81
 "#;
     let storage = KinFileStorage::new();
     let err = storage.parse_str(raw).unwrap_err();
-    assert!(err.contains("negative"), "expected negative error, got {err}");
+    assert!(
+        err.contains("negative"),
+        "expected negative error, got {err}"
+    );
 }
 
 #[test]
@@ -138,9 +144,10 @@ fn test_reject_exceeding_max_bodies() {
     let storage = KinFileStorage::new();
     let mut raw = String::from("[scene]\nname = \"Crowded\"\n");
     for i in 0..257 {
-        raw.push_str(&format!("[body.b{i}]\nmotion = \"mru\"\nx0 = 0.0\nv = 1.0\n"));
+        raw.push_str(&format!(
+            "[body.b{i}]\nmotion = \"mru\"\nx0 = 0.0\nv = 1.0\n"
+        ));
     }
     let err = storage.parse_str(&raw).unwrap_err();
     assert!(err.contains("maximum allowed bodies"));
 }
-

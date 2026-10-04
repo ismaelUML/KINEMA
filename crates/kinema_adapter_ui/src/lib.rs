@@ -151,10 +151,7 @@ impl SnapshotSink for UiPresenter {
         self.model.apex_markers = build_apex_markers(&scene.bodies);
         self.model.impact_markers = build_impact_markers(&scene.bodies);
 
-        let t_max = compute_graph_t_max(
-            &self.model.meeting_markers,
-            &self.model.impact_markers,
-        );
+        let t_max = compute_graph_t_max(&self.model.meeting_markers, &self.model.impact_markers);
         self.model.graph_series =
             build_graph_series(&scene.bodies, self.model.active_graph_kind, t_max);
 

@@ -119,3 +119,74 @@ fn test_m2_end_to_end_acceptance() {
     // New stopping time for Car B: t_s = -(-10)/4 = 2.5 s
     assert!((updated_model.stopping_markers[0].time - 2.5).abs() < 1e-9);
 }
+
+#[test]
+fn test_m3_end_to_end_acceptance() {
+    use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
+
+    let empty = Scene::new("Empty");
+    let mut service = SimulationService::new(empty);
+    let mut presenter = UiPresenter::new();
+
+    // 1. Load canonical M3 20m free fall scenario
+    service
+        .load_scenario("20m_free_fall")
+        .expect("M3 preset must load");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    let initial_model = presenter.model();
+    assert_eq!(initial_model.bodies.len(), 1);
+    assert!(initial_model.bodies[0].formula_text.contains("20.00"));
+    assert_eq!(initial_model.impact_markers.len(), 1);
+
+    // M3 Acceptance: t_i ≈ 2.019 s, |v_i| ≈ 19.8 m/s
+    let impact = &initial_model.impact_markers[0];
+    assert!((impact.time - 2.01927).abs() < 1e-4);
+    assert!((impact.speed - 19.809).abs() < 1e-3);
+
+    // 2. Exact Scrubbing: seek to impact instant yields y ≈ 0
+    service.seek(impact.time);
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let scrubbed_pos = presenter.model().bodies[0].current_position;
+    assert!(
+        scrubbed_pos.abs() < 1e-3,
+        "Position at impact instant should be ~0, got {scrubbed_pos}"
+    );
+
+    // 3. Serialization Roundtrip through KinFileStorage
+    let storage = KinFileStorage::new();
+    let serialized = storage.serialize_scene(service.scene());
+    let reloaded = storage.parse_str(&serialized).expect("Roundtrip parse");
+    let reloaded_service = SimulationService::new(reloaded);
+    let mut reloaded_presenter = UiPresenter::new();
+    reloaded_presenter.consume_snapshot(reloaded_service.scene(), reloaded_service.current_time());
+    let reloaded_impact = &reloaded_presenter.model().impact_markers[0];
+    assert!((reloaded_impact.time - 2.01927).abs() < 1e-4);
+
+    // 4. Vertical projectile: apex and impact
+    service
+        .load_scenario("vertical_projectile")
+        .expect("load projectile");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let proj_model = presenter.model();
+    assert_eq!(proj_model.apex_markers.len(), 1);
+    let apex = &proj_model.apex_markers[0];
+    assert!((apex.time - (20.0 / 9.81)).abs() < 1e-4);
+    assert!((apex.height - (400.0 / 19.62)).abs() < 1e-4);
+
+    // 5. Bounded Undo/Redo on parameter editing
+    service.edit_parameter("rock", "v0", 30.0).expect("edit v0");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let edited_apex = &presenter.model().apex_markers[0];
+    assert!((edited_apex.time - (30.0 / 9.81)).abs() < 1e-4);
+
+    assert!(service.undo());
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let undone_apex = &presenter.model().apex_markers[0];
+    assert!((undone_apex.time - (20.0 / 9.81)).abs() < 1e-4);
+
+    assert!(service.redo());
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let redone_apex = &presenter.model().apex_markers[0];
+    assert!((redone_apex.time - (30.0 / 9.81)).abs() < 1e-4);
+}

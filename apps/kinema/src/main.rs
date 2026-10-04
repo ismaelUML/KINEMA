@@ -8,14 +8,14 @@ use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl, SnapshotSin
 
 fn main() {
     println!("=======================================================");
-    println!(" K I N E M A  --  Interactive Physics Workbench (M2)   ");
+    println!(" K I N E M A  --  Interactive Physics Workbench (M3)   ");
     println!("=======================================================");
 
-    // Wire application and load canonical M2 preset (MRU vs MRUV)
+    // Wire application and load canonical M3 preset (20m free fall drop)
     let mut service = SimulationService::new(Scene::default());
     service
-        .load_scenario("two_cars_mruv")
-        .expect("Failed to load M2 preset");
+        .load_scenario("20m_free_fall")
+        .expect("Failed to load M3 preset");
 
     let _storage = KinFileStorage::new();
     let mut presenter = UiPresenter::new();
@@ -24,37 +24,47 @@ fn main() {
     presenter.consume_snapshot(service.scene(), service.current_time());
     print_view_model(presenter.model());
 
-    // Advance to turnaround / stopping instant (t = 5.0 s)
-    service.seek(5.0);
+    // Advance to ground impact instant (t ≈ 2.019 s)
+    service.seek(2.01927);
     presenter.set_graph_kind(GraphKind::VelocityTime);
     presenter.consume_snapshot(service.scene(), service.current_time());
-    println!("\n--- Advanced to turnaround point (t = 5.0 s) ---");
+    println!("\n--- Advanced to ground impact instant (t ≈ 2.02 s) ---");
     print_view_model(presenter.model());
 
-    // Instant edit acceleration: a = 3.0 m/s²
+    // Instant edit initial height: y0 = 45.0 m
     service
-        .edit_parameter("car_b", "a", 3.0)
+        .edit_parameter("ball", "y0", 45.0)
         .expect("Parameter edit failed");
     presenter.consume_snapshot(service.scene(), service.current_time());
-    println!("\n--- Edited Car B acceleration to +3.0 m/s² ---");
+    println!("\n--- Edited Ball drop height to 45.0 m ---");
     print_view_model(presenter.model());
 
-    println!("\nKINEMA M2 (MRUV) verified successfully.");
+    println!("\nKINEMA M3 (MVL & Control) verified successfully.");
 }
 
-fn print_view_model(model: &UiViewModel) {
-    println!("Title:     {}", model.window_title);
-    println!("Status:    {}", model.status_message);
-    println!("Inspector: {}", model.meeting_diagnosis);
+fn print_markers(model: &UiViewModel) {
     for marker in &model.meeting_markers {
         println!(" - Meeting Marker:  {}", marker.label);
     }
     for marker in &model.stopping_markers {
         println!(" - Stopping Marker: {}", marker.label);
     }
+    for marker in &model.apex_markers {
+        println!(" - Apex Marker:     {}", marker.label);
+    }
+    for marker in &model.impact_markers {
+        println!(" - Impact Marker:   {}", marker.label);
+    }
+}
+
+fn print_view_model(model: &UiViewModel) {
+    println!("Title:     {}", model.window_title);
+    println!("Status:    {}", model.status_message);
+    println!("Inspector: {}", model.meeting_diagnosis);
+    print_markers(model);
     for body in &model.bodies {
         println!(
-            " - [{}]: {} => x = {:.2} m, v = {:.2} m/s, a = {:.2} m/s²",
+            " - [{}]: {} => pos = {:.2} m, v = {:.2} m/s, a = {:.2} m/s²",
             body.name,
             body.formula_text,
             body.current_position,
