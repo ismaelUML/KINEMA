@@ -4,7 +4,7 @@ use crate::motion::Motion;
 use crate::rope::ParticleRope;
 
 /// Physical typology of the entity determining its visual model, reference frame, and interactions.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum EntityKind {
     /// Wheeled vehicle rolling on a horizontal surface, assigned to a specific lane offset.
     Vehicle { lane: usize },
@@ -22,22 +22,14 @@ pub enum EntityKind {
         f_app: f64,
     },
     /// Sliding block on a triangular inclined wedge with angle theta.
-    InclineBlock {
-        angle_rad: f64,
-        incline_length: f64,
-    },
+    InclineBlock { angle_rad: f64, incline_length: f64 },
     /// Canonical Atwood machine with two suspended hanging masses.
     AtwoodSystem { m1: f64, m2: f64 },
     /// Table-pulley half-Atwood system with tabletop block and hanging mass.
     TablePulleySystem { m1: f64, m2: f64 },
     /// Generic 1D kinematic point particle.
+    #[default]
     Generic,
-}
-
-impl Default for EntityKind {
-    fn default() -> Self {
-        Self::Generic
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

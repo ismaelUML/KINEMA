@@ -281,17 +281,16 @@ fn test_mvl_ground_stop() {
 fn test_body_entity_kind_metadata() {
     use kinema_domain::{Body, EntityKind, Mru};
 
-    let car = Body::new("c1", "Car 1", Mru::new(0.0, 10.0))
-        .with_kind(EntityKind::Vehicle { lane: 1 });
+    let car =
+        Body::new("c1", "Car 1", Mru::new(0.0, 10.0)).with_kind(EntityKind::Vehicle { lane: 1 });
     assert_eq!(car.kind, EntityKind::Vehicle { lane: 1 });
 
-    let crate_body = Body::new("box", "Crate", Mru::new(0.0, 0.0)).with_kind(
-        EntityKind::FrictionBlock {
+    let crate_body =
+        Body::new("box", "Crate", Mru::new(0.0, 0.0)).with_kind(EntityKind::FrictionBlock {
             mass: 50.0,
             mu_s: 0.4,
             mu_k: 0.25,
             f_app: 250.0,
-        },
-    );
+        });
     assert!(matches!(crate_body.kind, EntityKind::FrictionBlock { .. }));
 }

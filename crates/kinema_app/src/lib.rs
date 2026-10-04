@@ -384,10 +384,12 @@ fn build_coinciding_scenario() -> Scene {
     let mut scene = Scene::new("Coinciding cars");
     // Assigning separate lanes prevents Car B from completely occluding Car A in 2D space.
     scene.add_body(
-        Body::new("car_a", "Car A", Mru::new(25.0, 10.0)).with_kind(EntityKind::Vehicle { lane: 0 }),
+        Body::new("car_a", "Car A", Mru::new(25.0, 10.0))
+            .with_kind(EntityKind::Vehicle { lane: 0 }),
     );
     scene.add_body(
-        Body::new("car_b", "Car B", Mru::new(25.0, 10.0)).with_kind(EntityKind::Vehicle { lane: 1 }),
+        Body::new("car_b", "Car B", Mru::new(25.0, 10.0))
+            .with_kind(EntityKind::Vehicle { lane: 1 }),
     );
     scene
 }
@@ -508,12 +510,8 @@ fn build_atwood_scenario() -> Scene {
         .expect("valid masses")
         .with_gravity(g);
     scene.add_body(
-        Body::new("atwood", "Atwood Machine (m1=2kg, m2=3kg)", atwood).with_kind(
-            EntityKind::AtwoodSystem {
-                m1: 2.0,
-                m2: 3.0,
-            },
-        ),
+        Body::new("atwood", "Atwood Machine (m1=2kg, m2=3kg)", atwood)
+            .with_kind(EntityKind::AtwoodSystem { m1: 2.0, m2: 3.0 }),
     );
     scene
 }
@@ -531,10 +529,7 @@ fn build_table_pulley_scenario() -> Scene {
             "Table Pulley (m1=10kg, m2=6kg, μs=0.5, μk=0.3)",
             system,
         )
-        .with_kind(EntityKind::TablePulleySystem {
-            m1: 10.0,
-            m2: 6.0,
-        }),
+        .with_kind(EntityKind::TablePulleySystem { m1: 10.0, m2: 6.0 }),
     );
     scene
 }
