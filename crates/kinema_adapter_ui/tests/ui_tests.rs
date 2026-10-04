@@ -263,17 +263,40 @@ fn test_ui_presenter_m6_help_system_dialogs() {
     // 1. F1 Contents
     presenter.open_help(HelpTopic::Contents);
     assert!(presenter.model().help_dialog_open);
-    assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::Contents));
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("Keyboard Shortcuts"));
+    assert_eq!(
+        presenter.model().current_help_topic,
+        Some(HelpTopic::Contents)
+    );
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("Keyboard Shortcuts"));
 
     // 2. Equation Reference
     presenter.open_help(HelpTopic::EquationReference);
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("M1 - MRU"));
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("M5 - Atwood Machine"));
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("M1 - MRU"));
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("M5 - Atwood Machine"));
 
     // 3. About Dialog
     presenter.open_help(HelpTopic::About);
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("Old but functional"));
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("Old but functional"));
 
     // 4. Close Dialog
     presenter.close_help();
@@ -288,16 +311,26 @@ fn test_ui_presenter_m6_menu_structure() {
 
     assert_eq!(menus.len(), 6);
     let titles: Vec<&str> = menus.iter().map(|m| m.title.as_str()).collect();
-    assert_eq!(titles, vec!["File", "Edit", "View", "Simulate", "Scene", "Help"]);
+    assert_eq!(
+        titles,
+        vec!["File", "Edit", "View", "Simulate", "Scene", "Help"]
+    );
 
     let file_menu = &menus[0];
-    let file_actions: Vec<&str> = file_menu.items.iter().map(|i| i.action_id.as_str()).collect();
+    let file_actions: Vec<&str> = file_menu
+        .items
+        .iter()
+        .map(|i| i.action_id.as_str())
+        .collect();
     assert!(file_actions.contains(&"file.new"));
     assert!(file_actions.contains(&"file.export_png"));
 
     let help_menu = &menus[5];
-    let help_actions: Vec<&str> = help_menu.items.iter().map(|i| i.action_id.as_str()).collect();
+    let help_actions: Vec<&str> = help_menu
+        .items
+        .iter()
+        .map(|i| i.action_id.as_str())
+        .collect();
     assert!(help_actions.contains(&"help.contents"));
     assert!(help_actions.contains(&"help.equations"));
 }
-

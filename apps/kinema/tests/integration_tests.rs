@@ -395,7 +395,9 @@ fn test_m5_end_to_end_acceptance() {
 fn test_m6_end_to_end_acceptance() {
     use kinema_adapter_storage::PngCanvasExporter;
     use kinema_adapter_ui::{HelpTopic, UiTheme};
-    use kinema_ports::{CancellationToken, ImageExporter, ScenarioCatalog, SimulationControl, SnapshotSink};
+    use kinema_ports::{
+        CancellationToken, ImageExporter, ScenarioCatalog, SimulationControl, SnapshotSink,
+    };
     use std::fs;
 
     let empty = Scene::new("Empty");
@@ -444,17 +446,43 @@ fn test_m6_end_to_end_acceptance() {
     // 3. Help System & Dialogs
     presenter.open_help(HelpTopic::Contents);
     assert!(presenter.model().help_dialog_open);
-    assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::Contents));
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("Keyboard Shortcuts"));
+    assert_eq!(
+        presenter.model().current_help_topic,
+        Some(HelpTopic::Contents)
+    );
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("Keyboard Shortcuts"));
 
     presenter.open_help(HelpTopic::EquationReference);
-    assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::EquationReference));
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("M1 - MRU"));
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("M5 - Atwood Machine"));
+    assert_eq!(
+        presenter.model().current_help_topic,
+        Some(HelpTopic::EquationReference)
+    );
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("M1 - MRU"));
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("M5 - Atwood Machine"));
 
     presenter.open_help(HelpTopic::About);
     assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::About));
-    assert!(presenter.model().help_text.as_ref().unwrap().contains("Old but functional"));
+    assert!(presenter
+        .model()
+        .help_text
+        .as_ref()
+        .unwrap()
+        .contains("Old but functional"));
 
     presenter.close_help();
     assert!(!presenter.model().help_dialog_open);
@@ -468,7 +496,11 @@ fn test_m6_end_to_end_acceptance() {
         vec!["File", "Edit", "View", "Simulate", "Scene", "Help"]
     );
     let file_menu = &menus[0];
-    let file_actions: Vec<&str> = file_menu.items.iter().map(|item| item.action_id.as_str()).collect();
+    let file_actions: Vec<&str> = file_menu
+        .items
+        .iter()
+        .map(|item| item.action_id.as_str())
+        .collect();
     assert!(file_actions.contains(&"file.new"));
     assert!(file_actions.contains(&"file.open"));
     assert!(file_actions.contains(&"file.save"));
@@ -480,7 +512,8 @@ fn test_m6_end_to_end_acceptance() {
     let export_str = export_path.to_str().unwrap();
     let token = CancellationToken::new();
 
-    let export_res = exporter.export_png(service.scene(), service.current_time(), export_str, &token);
+    let export_res =
+        exporter.export_png(service.scene(), service.current_time(), export_str, &token);
     assert!(export_res.is_ok(), "PNG export failed: {:?}", export_res);
 
     let png_bytes = fs::read(&export_path).expect("read exported PNG file");
@@ -502,9 +535,13 @@ fn test_m6_end_to_end_acceptance() {
     let cancel_token = CancellationToken::new();
     cancel_token.cancel();
 
-    let cancel_res = exporter.export_png(service.scene(), service.current_time(), cancel_str, &cancel_token);
+    let cancel_res = exporter.export_png(
+        service.scene(),
+        service.current_time(),
+        cancel_str,
+        &cancel_token,
+    );
     assert!(cancel_res.is_err());
     assert_eq!(cancel_res.unwrap_err(), "Export cancelled by user");
     assert!(!cancel_path.exists(), "Cancelled file must be removed");
 }
-

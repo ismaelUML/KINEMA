@@ -69,4 +69,3 @@ pub trait ImageExporter {
 pub trait SnapshotSink {
     fn consume_snapshot(&mut self, scene: &Scene, current_time: f64);
 }
-

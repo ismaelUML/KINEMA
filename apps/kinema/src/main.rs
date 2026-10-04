@@ -55,15 +55,24 @@ fn main() {
     println!("\n[1] Theme Switching:");
     println!(" -> Active Theme: {:?}", presenter.theme());
     presenter.set_theme(kinema_adapter_ui::UiTheme::Phosphor);
-    println!(" -> Switched to Phosphor: Primary Text Hex = {}", presenter.model().palette.text_primary);
+    println!(
+        " -> Switched to Phosphor: Primary Text Hex = {}",
+        presenter.model().palette.text_primary
+    );
     presenter.set_theme(kinema_adapter_ui::UiTheme::Amber);
-    println!(" -> Switched to Amber: Primary Text Hex = {}", presenter.model().palette.text_primary);
+    println!(
+        " -> Switched to Amber: Primary Text Hex = {}",
+        presenter.model().palette.text_primary
+    );
 
     // 2. Help System & Dialogs:
     println!("\n[2] Help System & Dialogs:");
     presenter.open_help(kinema_adapter_ui::HelpTopic::Contents);
     if let Some(txt) = &presenter.model().help_text {
-        println!(" -> Opened [Help Contents]: {} lines of guidance", txt.lines().count());
+        println!(
+            " -> Opened [Help Contents]: {} lines of guidance",
+            txt.lines().count()
+        );
     }
     presenter.open_help(kinema_adapter_ui::HelpTopic::EquationReference);
     if presenter.model().help_text.is_some() {
@@ -87,7 +96,9 @@ fn main() {
 
     match exporter.export_png(service.scene(), service.current_time(), export_str, &token) {
         Ok(()) => {
-            let size = std::fs::metadata(&export_path).map(|m| m.len()).unwrap_or(0);
+            let size = std::fs::metadata(&export_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
             println!(" -> Exported canvas to {} ({} bytes)", export_str, size);
             let _ = std::fs::remove_file(&export_path);
         }

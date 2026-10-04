@@ -286,8 +286,7 @@ impl ImageExporter for PngCanvasExporter {
         match export_res {
             Ok(()) => {
                 let _ = fs::remove_file(path);
-                fs::rename(&tmp_path, path)
-                    .map_err(|e| format!("Failed to commit PNG file: {}", e))
+                fs::rename(&tmp_path, path).map_err(|e| format!("Failed to commit PNG file: {}", e))
             }
             Err(e) => {
                 let _ = fs::remove_file(&tmp_path);

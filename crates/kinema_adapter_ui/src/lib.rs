@@ -834,4 +834,3 @@ fn make_help_menu() -> UiMenu {
         ],
     )
 }
-

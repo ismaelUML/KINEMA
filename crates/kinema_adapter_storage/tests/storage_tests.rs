@@ -361,6 +361,8 @@ fn test_png_export_cancellation_cleans_up_file() {
     assert_eq!(result.unwrap_err(), "Export cancelled by user");
 
     // Must clean up any temporary or target files
-    assert!(!out_path.exists(), "Target file must not exist after cancellation");
+    assert!(
+        !out_path.exists(),
+        "Target file must not exist after cancellation"
+    );
 }
-
