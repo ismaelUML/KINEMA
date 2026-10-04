@@ -9,11 +9,7 @@ use kinema_ports::{SimulationControl, SnapshotSink};
 #[test]
 fn test_m0_end_to_end_wire() {
     let mut scene = Scene::new("Integration Scene");
-    scene.add_body(Body {
-        id: "veh_1".to_string(),
-        name: "Vehicle 1".to_string(),
-        motion: Mru::new(0.0, 20.0),
-    });
+    scene.add_body(Body::new("veh_1", "Vehicle 1", Mru::new(0.0, 20.0)));
 
     let storage = KinFileStorage::new();
     let serialized = storage.serialize_scene(&scene);
@@ -79,4 +75,47 @@ fn test_m1_end_to_end_acceptance() {
         "Relative error {} must be strictly < 1e-9",
         rel_error
     );
+}
+
+#[test]
+fn test_m2_end_to_end_acceptance() {
+    use kinema_adapter_ui::GraphKind;
+    use kinema_ports::{ScenarioCatalog, SceneEditing};
+
+    let empty = Scene::new("Empty");
+    let mut service = SimulationService::new(empty);
+    let mut presenter = UiPresenter::new();
+
+    // 1. Load canonical M2 preset (MRU vs MRUV)
+    service
+        .load_scenario("two_cars_mruv")
+        .expect("M2 preset must load");
+    presenter.set_graph_kind(GraphKind::VelocityTime);
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    let initial_model = presenter.model();
+    assert_eq!(initial_model.bodies.len(), 2);
+    assert_eq!(initial_model.meeting_markers.len(), 2);
+
+    // Two roots: t = 5 s, t = 20 s
+    assert!((initial_model.meeting_markers[0].time - 5.0).abs() < 1e-9);
+    assert!((initial_model.meeting_markers[0].position - 75.0).abs() < 1e-9);
+    assert!((initial_model.meeting_markers[1].time - 20.0).abs() < 1e-9);
+    assert!((initial_model.meeting_markers[1].position - 300.0).abs() < 1e-9);
+
+    // Stopping instant for Car B: t_s = 5 s
+    assert_eq!(initial_model.stopping_markers.len(), 1);
+    assert!((initial_model.stopping_markers[0].time - 5.0).abs() < 1e-9);
+
+    // 2. Edit acceleration on same frame: a = 4.0 m/s²
+    service
+        .edit_parameter("car_b", "a", 4.0)
+        .expect("edit parameter a");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    let updated_model = presenter.model();
+    // Formula updated instantly with new acceleration
+    assert!(updated_model.bodies[1].formula_text.contains("2.00 · t²"));
+    // New stopping time for Car B: t_s = -(-10)/4 = 2.5 s
+    assert!((updated_model.stopping_markers[0].time - 2.5).abs() < 1e-9);
 }

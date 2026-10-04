@@ -242,11 +242,7 @@ impl ScenarioCatalog for SimulationService {
 
 fn build_two_cars_scenario() -> Scene {
     let mut scene = Scene::new("Two cars meeting");
-    scene.add_body(Body::new(
-        "car_a",
-        "Car A (15 m/s)",
-        Mru::new(0.0, 15.0),
-    ));
+    scene.add_body(Body::new("car_a", "Car A (15 m/s)", Mru::new(0.0, 15.0)));
     scene.add_body(Body::new(
         "car_b",
         "Car B (-10 m/s)",
@@ -272,30 +268,14 @@ fn build_two_cars_mruv_scenario() -> Scene {
 
 fn build_parallel_scenario() -> Scene {
     let mut scene = Scene::new("Parallel cars never meeting");
-    scene.add_body(Body::new(
-        "car_a",
-        "Car A",
-        Mru::new(0.0, 20.0),
-    ));
-    scene.add_body(Body::new(
-        "car_b",
-        "Car B",
-        Mru::new(50.0, 20.0),
-    ));
+    scene.add_body(Body::new("car_a", "Car A", Mru::new(0.0, 20.0)));
+    scene.add_body(Body::new("car_b", "Car B", Mru::new(50.0, 20.0)));
     scene
 }
 
 fn build_coinciding_scenario() -> Scene {
     let mut scene = Scene::new("Coinciding cars");
-    scene.add_body(Body::new(
-        "car_a",
-        "Car A",
-        Mru::new(25.0, 10.0),
-    ));
-    scene.add_body(Body::new(
-        "car_b",
-        "Car B",
-        Mru::new(25.0, 10.0),
-    ));
+    scene.add_body(Body::new("car_a", "Car A", Mru::new(25.0, 10.0)));
+    scene.add_body(Body::new("car_b", "Car B", Mru::new(25.0, 10.0)));
     scene
 }

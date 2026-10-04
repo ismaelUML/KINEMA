@@ -77,7 +77,12 @@ impl KinFileStorage {
             }
 
             if let Some((key, val)) = line.split_once('=') {
-                apply_kv_pair(&mut scene, &mut current_draft, key.trim(), val.trim().trim_matches('"'))?;
+                apply_kv_pair(
+                    &mut scene,
+                    &mut current_draft,
+                    key.trim(),
+                    val.trim().trim_matches('"'),
+                )?;
             }
         }
 

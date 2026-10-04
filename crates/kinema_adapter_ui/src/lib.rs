@@ -186,7 +186,12 @@ fn build_stopping_markers(bodies: &[Body]) -> Vec<UiStoppingMarker> {
                 body_id: b.id.clone(),
                 time: ts,
                 position: b.motion.position_at(ts),
-                label: format!("stopping ({} at t={:.2}s, x={:.2}m)", b.name, ts, b.motion.position_at(ts)),
+                label: format!(
+                    "stopping ({} at t={:.2}s, x={:.2}m)",
+                    b.name,
+                    ts,
+                    b.motion.position_at(ts)
+                ),
             })
         })
         .collect()
