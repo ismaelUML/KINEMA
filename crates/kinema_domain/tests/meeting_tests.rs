@@ -62,7 +62,10 @@ fn test_m1_meeting_edge_cases_and_diagnostics() {
     let b1 = Mru::new(50.0, 20.0);
     let outcome1 = analyze_mru_meeting(&a1, &b1);
     assert_eq!(outcome1, MeetingOutcome::CoincideAlways);
-    assert_eq!(outcome1.diagnostic_message(), "Bodies coincide for all time");
+    assert_eq!(
+        outcome1.diagnostic_message(),
+        "Bodies coincide for all time"
+    );
 
     // Never meet: different x0 and parallel v
     let a2 = Mru::new(0.0, 20.0);

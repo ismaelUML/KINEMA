@@ -27,5 +27,56 @@ fn test_m0_end_to_end_wire() {
 
     let summary = CliRunner::summarize_scene(service.scene(), service.current_time());
     assert!(!summary.is_empty());
-    assert_eq!(presenter.model().bodies_count, 1);
+    assert_eq!(presenter.model().bodies.len(), 1);
+}
+
+#[test]
+fn test_m1_end_to_end_acceptance() {
+    use kinema_ports::{ScenarioCatalog, SceneEditing};
+
+    let empty = Scene::new("Empty");
+    let mut service = SimulationService::new(empty);
+    let mut presenter = UiPresenter::new();
+
+    // 1. Load canonical M1 scenario via ScenarioCatalog port
+    service
+        .load_scenario("two_cars_mru")
+        .expect("scenario must load");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    let initial_model = presenter.model();
+    assert_eq!(initial_model.bodies.len(), 2);
+    assert_eq!(
+        initial_model.bodies[0].formula_text,
+        "x(t) = 0.00 + 15.00 · t"
+    );
+    assert_eq!(
+        initial_model.bodies[1].formula_text,
+        "x(t) = 100.00 - 10.00 · t"
+    );
+    assert_eq!(initial_model.meeting_markers.len(), 1);
+    assert_eq!(initial_model.meeting_markers[0].time, 4.0);
+    assert_eq!(initial_model.meeting_markers[0].position, 60.0);
+
+    // 2. Edit velocity on same frame: v_A = 35.0 m/s
+    service
+        .edit_parameter("car_a", "v", 35.0)
+        .expect("edit parameter v");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    let updated_model = presenter.model();
+    // Formula updated instantly
+    assert_eq!(
+        updated_model.bodies[0].formula_text,
+        "x(t) = 0.00 + 35.00 · t"
+    );
+    // Meeting instant recalculated on same frame: t* = 100 / (35 - (-10)) = 100 / 45 = 2.2222222222222223
+    let expected_t = 100.0 / 45.0;
+    let actual_t = updated_model.meeting_markers[0].time;
+    let rel_error = (actual_t - expected_t).abs() / expected_t;
+    assert!(
+        rel_error < 1e-9,
+        "Relative error {} must be strictly < 1e-9",
+        rel_error
+    );
 }
