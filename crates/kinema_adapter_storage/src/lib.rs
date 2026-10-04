@@ -1,3 +1,4 @@
+use kinema_domain::dynamics::BlockDynamics;
 use kinema_domain::motion::{Motion, Mru, Mruv, Mvl};
 use kinema_domain::scene::{Body, Scene};
 use kinema_ports::SceneRepository;
@@ -18,6 +19,11 @@ struct BodyDraft {
     v: f64,
     a: f64,
     g: f64,
+    mass: f64,
+    theta: f64,
+    mu_s: f64,
+    mu_k: f64,
+    f_app: f64,
 }
 
 impl BodyDraft {
@@ -29,11 +35,21 @@ impl BodyDraft {
             v: 0.0,
             a: 0.0,
             g: 9.80665,
+            mass: 1.0,
+            theta: 0.0,
+            mu_s: 0.5,
+            mu_k: 0.3,
+            f_app: 0.0,
         }
     }
 
     fn into_body(self) -> Body {
         let motion: Motion = match self.motion_type.as_str() {
+            "dynamics" => BlockDynamics::new(self.mass, self.theta, self.mu_s, self.mu_k)
+                .with_applied_force(self.f_app)
+                .with_initial_state(self.x0, self.v)
+                .with_gravity(self.g)
+                .into(),
             "mvl" => Mvl::new(self.x0, self.v, self.g).into(),
             "mruv" => Mruv::new(self.x0, self.v, self.a).into(),
             _ => {
@@ -54,6 +70,14 @@ fn parse_finite_f64(val: &str, field: &str) -> Result<f64, String> {
         .map_err(|e| format!("Invalid {}: {}", field, e))?;
     if num.is_nan() || num.is_infinite() {
         return Err(format!("{} must be finite", field));
+    }
+    Ok(num)
+}
+
+fn parse_positive_f64(val: &str, field: &str) -> Result<f64, String> {
+    let num = parse_finite_f64(val, field)?;
+    if num <= 0.0 {
+        return Err(format!("{} must be strictly positive", field));
     }
     Ok(num)
 }
@@ -121,31 +145,54 @@ impl KinFileStorage {
         out.push_str(&format!("gravity = {}\n\n", scene.gravity));
 
         for body in &scene.bodies {
-            out.push_str(&format!("[body.{}]\n", body.id));
-            out.push_str("kind = \"vehicle\"\n");
-            match &body.motion {
-                Motion::Mru(m) => {
-                    out.push_str("motion = \"mru\"\n");
-                    out.push_str(&format!("x0 = {}\n", m.x0));
-                    out.push_str(&format!("v = {}\n\n", m.v));
-                }
-                Motion::Mruv(m) => {
-                    out.push_str("motion = \"mruv\"\n");
-                    out.push_str(&format!("x0 = {}\n", m.x0));
-                    out.push_str(&format!("v = {}\n", m.v0));
-                    out.push_str(&format!("a = {}\n\n", m.a));
-                }
-                Motion::Mvl(m) => {
-                    out.push_str("motion = \"mvl\"\n");
-                    out.push_str(&format!("y0 = {}\n", m.y0));
-                    out.push_str(&format!("v0 = {}\n", m.v0));
-                    out.push_str(&format!("g = {}\n\n", m.g));
-                }
-            }
+            serialize_body(&mut out, body);
         }
 
         out
     }
+}
+
+fn serialize_body(out: &mut String, body: &Body) {
+    out.push_str(&format!("[body.{}]\n", body.id));
+    out.push_str("kind = \"vehicle\"\n");
+    match &body.motion {
+        Motion::Mru(m) => serialize_mru(out, m),
+        Motion::Mruv(m) => serialize_mruv(out, m),
+        Motion::Mvl(m) => serialize_mvl(out, m),
+        Motion::Dynamics(d) => serialize_dynamics(out, d),
+    }
+}
+
+fn serialize_mru(out: &mut String, m: &Mru) {
+    out.push_str("motion = \"mru\"\n");
+    out.push_str(&format!("x0 = {}\n", m.x0));
+    out.push_str(&format!("v = {}\n\n", m.v));
+}
+
+fn serialize_mruv(out: &mut String, m: &Mruv) {
+    out.push_str("motion = \"mruv\"\n");
+    out.push_str(&format!("x0 = {}\n", m.x0));
+    out.push_str(&format!("v = {}\n", m.v0));
+    out.push_str(&format!("a = {}\n\n", m.a));
+}
+
+fn serialize_mvl(out: &mut String, m: &Mvl) {
+    out.push_str("motion = \"mvl\"\n");
+    out.push_str(&format!("y0 = {}\n", m.y0));
+    out.push_str(&format!("v0 = {}\n", m.v0));
+    out.push_str(&format!("g = {}\n\n", m.g));
+}
+
+fn serialize_dynamics(out: &mut String, d: &BlockDynamics) {
+    out.push_str("motion = \"dynamics\"\n");
+    out.push_str(&format!("mass = {}\n", d.mass));
+    out.push_str(&format!("theta = {}\n", d.theta));
+    out.push_str(&format!("mu_s = {}\n", d.mu_s));
+    out.push_str(&format!("mu_k = {}\n", d.mu_k));
+    out.push_str(&format!("f_app = {}\n", d.f_app));
+    out.push_str(&format!("gravity = {}\n", d.gravity));
+    out.push_str(&format!("x0 = {}\n", d.x0));
+    out.push_str(&format!("v0 = {}\n\n", d.v0));
 }
 
 fn commit_body_draft(scene: &mut Scene, draft: BodyDraft) -> Result<(), String> {
@@ -187,7 +234,12 @@ fn apply_body_kv(draft: &mut BodyDraft, key: &str, val: &str) -> Result<(), Stri
         "x0" | "y0" => draft.x0 = parse_finite_f64(val, key)?,
         "v" | "v0" => draft.v = parse_finite_f64(val, key)?,
         "a" => draft.a = parse_finite_f64(val, "a")?,
-        "g" => draft.g = parse_non_negative_f64(val, "Gravity")?,
+        "g" | "gravity" => draft.g = parse_non_negative_f64(val, "Gravity")?,
+        "mass" | "m" => draft.mass = parse_positive_f64(val, "Mass")?,
+        "theta" | "angle" => draft.theta = parse_non_negative_f64(val, "Angle")?,
+        "mu_s" => draft.mu_s = parse_non_negative_f64(val, "mu_s")?,
+        "mu_k" => draft.mu_k = parse_non_negative_f64(val, "mu_k")?,
+        "f_app" | "f" => draft.f_app = parse_finite_f64(val, "Applied force")?,
         _ => {}
     }
     Ok(())

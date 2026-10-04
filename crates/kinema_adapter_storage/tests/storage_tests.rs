@@ -151,3 +151,54 @@ fn test_reject_exceeding_max_bodies() {
     let err = storage.parse_str(&raw).unwrap_err();
     assert!(err.contains("maximum allowed bodies"));
 }
+
+#[test]
+fn test_parse_and_roundtrip_dynamics_scene() {
+    let raw = r#"
+[scene]
+name = "Block on rough incline"
+gravity = 9.81
+
+[body.crate]
+kind = "vehicle"
+motion = "dynamics"
+mass = 5.0
+theta = 0.5235987755982988
+mu_s = 0.5
+mu_k = 0.3
+f_app = 25.0
+gravity = 9.81
+x0 = 0.0
+v0 = 0.0
+"#;
+    let storage = KinFileStorage::new();
+    let scene = storage.parse_str(raw).expect("parse dynamics scene");
+    assert_eq!(scene.bodies.len(), 1);
+    let b = &scene.bodies[0];
+    assert_eq!(b.id, "crate");
+    assert_eq!(b.motion.position_at(0.0), 0.0);
+
+    // Roundtrip
+    let serialized = storage.serialize_scene(&scene);
+    assert!(serialized.contains("motion = \"dynamics\""));
+    assert!(serialized.contains("mass = 5"));
+    assert!(serialized.contains("mu_s = 0.5"));
+    let roundtripped = storage.parse_str(&serialized).expect("roundtrip parse");
+    assert_eq!(roundtripped.bodies.len(), 1);
+}
+
+#[test]
+fn test_reject_non_positive_mass() {
+    let raw = "[body.bad]\nmotion = \"dynamics\"\nmass = -2.0\n";
+    let storage = KinFileStorage::new();
+    let err = storage.parse_str(raw).unwrap_err();
+    assert!(err.contains("positive"));
+}
+
+#[test]
+fn test_reject_negative_friction() {
+    let raw = "[body.bad]\nmotion = \"dynamics\"\nmu_s = -0.5\n";
+    let storage = KinFileStorage::new();
+    let err = storage.parse_str(raw).unwrap_err();
+    assert!(err.contains("negative"));
+}
