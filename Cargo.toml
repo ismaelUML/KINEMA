@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kinema_domain",
+    "crates/kinema_ports",
+    "crates/kinema_app",
+    "crates/kinema_adapter_ui",
+    "crates/kinema_adapter_cli",
+    "crates/kinema_adapter_storage",
+    "apps/kinema",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["KINEMA Project"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+kinema_domain = { path = "crates/kinema_domain" }
+kinema_ports = { path = "crates/kinema_ports" }
+kinema_app = { path = "crates/kinema_app" }
+kinema_adapter_ui = { path = "crates/kinema_adapter_ui" }
+kinema_adapter_cli = { path = "crates/kinema_adapter_cli" }
+kinema_adapter_storage = { path = "crates/kinema_adapter_storage" }

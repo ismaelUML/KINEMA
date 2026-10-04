@@ -1,0 +1,10 @@
+[package]
+name = "kinema_adapter_storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+kinema_domain = { workspace = true }
+kinema_ports = { workspace = true }

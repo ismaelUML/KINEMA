@@ -1,0 +1,95 @@
+//! Meeting instant solver adhering strictly to CC <= 5.
+
+use std::cmp::Ordering;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Degree {
+    Constant,
+    Linear,
+    Quadratic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Quadratic {
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+}
+
+impl Quadratic {
+    pub fn new(a: f64, b: f64, c: f64) -> Self {
+        Self { a, b, c }
+    }
+
+    pub fn degree(&self) -> Degree {
+        const EPS: f64 = 1e-12;
+        if self.a.abs() > EPS {
+            Degree::Quadratic
+        } else if self.b.abs() > EPS {
+            Degree::Linear
+        } else {
+            Degree::Constant
+        }
+    }
+
+    pub fn discriminant(&self) -> f64 {
+        self.b * self.b - 4.0 * self.a * self.c
+    }
+
+    pub fn vertex_t(&self) -> f64 {
+        -self.b / (2.0 * self.a)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Roots {
+    None,
+    One(f64),
+    Two((f64, f64)),
+    Infinite,
+}
+
+pub fn meeting_times(q: Quadratic) -> Roots {
+    match q.degree() {
+        Degree::Constant => solve_constant(q),
+        Degree::Linear => solve_linear(q),
+        Degree::Quadratic => solve_quadratic(q),
+    }
+}
+
+fn solve_constant(q: Quadratic) -> Roots {
+    const EPS: f64 = 1e-12;
+    if q.c.abs() < EPS {
+        Roots::Infinite
+    } else {
+        Roots::None
+    }
+}
+
+fn solve_linear(q: Quadratic) -> Roots {
+    Roots::One(-q.c / q.b)
+}
+
+pub fn solve_quadratic(q: Quadratic) -> Roots {
+    match q.discriminant().partial_cmp(&0.0) {
+        Some(Ordering::Less) => Roots::None,
+        Some(Ordering::Equal) => Roots::One(q.vertex_t()),
+        Some(Ordering::Greater) => Roots::Two(stable_pair(q)),
+        None => Roots::None,
+    }
+}
+
+/// Why: textbook formula (-b +- sqrt(D))/(2a) suffers catastrophic cancellation when b^2 >> 4ac.
+/// Stable citardauq/Muller form computes q = -0.5 * (b + sign(b) * sqrt(D)) and roots x1 = q/a, x2 = c/q.
+fn stable_pair(q: Quadratic) -> (f64, f64) {
+    let d = q.discriminant().sqrt();
+    let sign_b = if q.b >= 0.0 { 1.0 } else { -1.0 };
+    let temp = -0.5 * (q.b + sign_b * d);
+    let r1 = temp / q.a;
+    let r2 = q.c / temp;
+    if r1 <= r2 {
+        (r1, r2)
+    } else {
+        (r2, r1)
+    }
+}

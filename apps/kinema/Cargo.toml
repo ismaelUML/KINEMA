@@ -1,0 +1,14 @@
+[package]
+name = "kinema"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+kinema_domain = { workspace = true }
+kinema_ports = { workspace = true }
+kinema_app = { workspace = true }
+kinema_adapter_ui = { workspace = true }
+kinema_adapter_cli = { workspace = true }
+kinema_adapter_storage = { workspace = true }
