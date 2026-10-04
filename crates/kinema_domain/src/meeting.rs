@@ -126,16 +126,41 @@ impl MeetingOutcome {
         match self {
             MeetingOutcome::CoincideAlways => "Bodies coincide for all time",
             MeetingOutcome::NeverMeet => "Bodies never meet",
-            MeetingOutcome::Single(inst) if inst.is_past => "Bodies met in the past",
-            MeetingOutcome::Single(_) => "Bodies meet at one instant",
-            MeetingOutcome::Dual(_, _) => "Bodies meet at two instants",
+            MeetingOutcome::Single(inst) => single_diagnostic(inst.is_past),
+            MeetingOutcome::Dual(i1, i2) => dual_diagnostic(i1.is_past, i2.is_past),
         }
     }
 }
 
-/// Solves linear meeting between two MRU motions: (v_a - v_b) * t + (x0_a - x0_b) = 0.
-pub fn analyze_mru_meeting(a: &Mru, b: &Mru) -> MeetingOutcome {
-    let q = Quadratic::new(0.0, a.v - b.v, a.x0 - b.x0);
+fn single_diagnostic(is_past: bool) -> &'static str {
+    if is_past {
+        "Bodies met in the past"
+    } else {
+        "Bodies meet at one instant"
+    }
+}
+
+fn dual_diagnostic(i1_past: bool, i2_past: bool) -> &'static str {
+    if i1_past && i2_past {
+        "Bodies met twice in the past"
+    } else if i1_past || i2_past {
+        "Bodies meet twice (one in the past)"
+    } else {
+        "Bodies meet at two instants"
+    }
+}
+
+/// Solves 1D meeting between any two motions (MRU or MRUV):
+/// 0.5 * (a_a - a_b) * t^2 + (v0_a - v0_b) * t + (x0_a - x0_b) = 0.
+pub fn analyze_meeting(
+    a: &(impl Motion1D + ?Sized),
+    b: &(impl Motion1D + ?Sized),
+) -> MeetingOutcome {
+    let a_lead = 0.5 * (a.acceleration_at(0.0) - b.acceleration_at(0.0));
+    let b_linear = a.velocity_at(0.0) - b.velocity_at(0.0);
+    let c_const = a.position_at(0.0) - b.position_at(0.0);
+    let q = Quadratic::new(a_lead, b_linear, c_const);
+
     match meeting_times(q) {
         Roots::Infinite => MeetingOutcome::CoincideAlways,
         Roots::None => MeetingOutcome::NeverMeet,
@@ -149,4 +174,9 @@ pub fn analyze_mru_meeting(a: &Mru, b: &Mru) -> MeetingOutcome {
             MeetingOutcome::Dual(MeetingInstant::new(t1, x1), MeetingInstant::new(t2, x2))
         }
     }
+}
+
+/// Specialized helper for two MRU motions (backwards compatible).
+pub fn analyze_mru_meeting(a: &Mru, b: &Mru) -> MeetingOutcome {
+    analyze_meeting(a, b)
 }

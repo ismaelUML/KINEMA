@@ -1,12 +1,22 @@
 //! Scene model containing bodies and constants.
 
-use crate::motion::Mru;
+use crate::motion::Motion;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Body {
     pub id: String,
     pub name: String,
-    pub motion: Mru,
+    pub motion: Motion,
+}
+
+impl Body {
+    pub fn new(id: &str, name: &str, motion: impl Into<Motion>) -> Self {
+        Self {
+            id: id.to_string(),
+            name: name.to_string(),
+            motion: motion.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
