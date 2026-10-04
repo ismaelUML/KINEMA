@@ -1,4 +1,4 @@
-use kinema_domain::motion::{Motion, Mru, Mruv};
+use kinema_domain::motion::{Motion, Mru, Mruv, Mvl};
 use kinema_domain::scene::{Body, Scene};
 use kinema_ports::SceneRepository;
 use std::fs;
@@ -17,6 +17,7 @@ struct BodyDraft {
     x0: f64,
     v: f64,
     a: f64,
+    g: f64,
 }
 
 impl BodyDraft {
@@ -27,14 +28,21 @@ impl BodyDraft {
             x0: 0.0,
             v: 0.0,
             a: 0.0,
+            g: 9.80665,
         }
     }
 
     fn into_body(self) -> Body {
-        let motion: Motion = if self.motion_type == "mruv" || self.a.abs() > 1e-12 {
-            Mruv::new(self.x0, self.v, self.a).into()
-        } else {
-            Mru::new(self.x0, self.v).into()
+        let motion: Motion = match self.motion_type.as_str() {
+            "mvl" => Mvl::new(self.x0, self.v, self.g).into(),
+            "mruv" => Mruv::new(self.x0, self.v, self.a).into(),
+            _ => {
+                if self.a.abs() > 1e-12 {
+                    Mruv::new(self.x0, self.v, self.a).into()
+                } else {
+                    Mru::new(self.x0, self.v).into()
+                }
+            }
         };
         Body::new(&self.id, &self.id, motion)
     }
@@ -46,6 +54,14 @@ fn parse_finite_f64(val: &str, field: &str) -> Result<f64, String> {
         .map_err(|e| format!("Invalid {}: {}", field, e))?;
     if num.is_nan() || num.is_infinite() {
         return Err(format!("{} must be finite", field));
+    }
+    Ok(num)
+}
+
+fn parse_non_negative_f64(val: &str, field: &str) -> Result<f64, String> {
+    let num = parse_finite_f64(val, field)?;
+    if num < 0.0 {
+        return Err(format!("{} cannot be negative", field));
     }
     Ok(num)
 }
@@ -71,18 +87,17 @@ impl KinFileStorage {
                     commit_body_draft(&mut scene, draft)?;
                 }
                 if let Some(stripped) = section.strip_prefix("body.") {
-                    current_draft = Some(BodyDraft::new(stripped));
+                    let id = stripped.trim();
+                    if id.is_empty() {
+                        return Err("Body ID cannot be empty".to_string());
+                    }
+                    current_draft = Some(BodyDraft::new(id));
                 }
                 continue;
             }
 
             if let Some((key, val)) = line.split_once('=') {
-                apply_kv_pair(
-                    &mut scene,
-                    &mut current_draft,
-                    key.trim(),
-                    val.trim().trim_matches('"'),
-                )?;
+                dispatch_kv_pair(&mut scene, &mut current_draft, key.trim(), val.trim().trim_matches('"'))?;
             }
         }
 
@@ -115,6 +130,12 @@ impl KinFileStorage {
                     out.push_str(&format!("v = {}\n", m.v0));
                     out.push_str(&format!("a = {}\n\n", m.a));
                 }
+                Motion::Mvl(m) => {
+                    out.push_str("motion = \"mvl\"\n");
+                    out.push_str(&format!("y0 = {}\n", m.y0));
+                    out.push_str(&format!("v0 = {}\n", m.v0));
+                    out.push_str(&format!("g = {}\n\n", m.g));
+                }
             }
         }
 
@@ -126,39 +147,42 @@ fn commit_body_draft(scene: &mut Scene, draft: BodyDraft) -> Result<(), String> 
     if scene.bodies.len() >= MAX_BODIES_COUNT {
         return Err("Scene exceeds maximum allowed bodies (256)".to_string());
     }
+    if scene.bodies.iter().any(|b| b.id == draft.id) {
+        return Err(format!("Duplicate body ID '{}'", draft.id));
+    }
     scene.add_body(draft.into_body());
     Ok(())
 }
 
-fn apply_kv_pair(
+fn dispatch_kv_pair(
     scene: &mut Scene,
     draft: &mut Option<BodyDraft>,
     key: &str,
     val: &str,
 ) -> Result<(), String> {
+    if draft.is_some() {
+        apply_body_kv(draft.as_mut().unwrap(), key, val)
+    } else {
+        apply_scene_kv(scene, key, val)
+    }
+}
+
+fn apply_scene_kv(scene: &mut Scene, key: &str, val: &str) -> Result<(), String> {
     match key {
         "name" => scene.name = val.to_string(),
-        "gravity" => scene.gravity = parse_finite_f64(val, "gravity")?,
-        "motion" => {
-            if let Some(d) = draft.as_mut() {
-                d.motion_type = val.to_string();
-            }
-        }
-        "x0" => {
-            if let Some(d) = draft.as_mut() {
-                d.x0 = parse_finite_f64(val, "x0")?;
-            }
-        }
-        "v" | "v0" => {
-            if let Some(d) = draft.as_mut() {
-                d.v = parse_finite_f64(val, "v")?;
-            }
-        }
-        "a" => {
-            if let Some(d) = draft.as_mut() {
-                d.a = parse_finite_f64(val, "a")?;
-            }
-        }
+        "gravity" => scene.gravity = parse_non_negative_f64(val, "Gravity")?,
+        _ => {}
+    }
+    Ok(())
+}
+
+fn apply_body_kv(draft: &mut BodyDraft, key: &str, val: &str) -> Result<(), String> {
+    match key {
+        "motion" => draft.motion_type = val.to_string(),
+        "x0" | "y0" => draft.x0 = parse_finite_f64(val, key)?,
+        "v" | "v0" => draft.v = parse_finite_f64(val, key)?,
+        "a" => draft.a = parse_finite_f64(val, "a")?,
+        "g" => draft.g = parse_non_negative_f64(val, "Gravity")?,
         _ => {}
     }
     Ok(())

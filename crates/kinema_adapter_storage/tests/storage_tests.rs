@@ -45,3 +45,102 @@ fn test_reject_nan_gravity() {
     let storage = KinFileStorage::new();
     assert!(storage.parse_str(raw).is_err());
 }
+
+#[test]
+fn test_parse_and_roundtrip_mvl_scene() {
+    let raw = r#"
+[scene]
+name = "Free Fall Drop"
+gravity = 9.81
+
+[body.ball]
+kind = "vehicle"
+motion = "mvl"
+y0 = 20.0
+v0 = 0.0
+g = 9.81
+"#;
+    let storage = KinFileStorage::new();
+    let scene = storage.parse_str(raw).expect("Failed to parse Mvl scene");
+    assert_eq!(scene.name, "Free Fall Drop");
+    assert_eq!(scene.bodies.len(), 1);
+    let ball = &scene.bodies[0];
+    assert_eq!(ball.id, "ball");
+    assert_eq!(ball.motion.position_at(0.0), 20.0);
+    assert_eq!(ball.motion.velocity_at(0.0), 0.0);
+    assert_eq!(ball.motion.acceleration_at(0.0), -9.81);
+
+    // Serialization roundtrip
+    let serialized = storage.serialize_scene(&scene);
+    assert!(serialized.contains("motion = \"mvl\""));
+    assert!(serialized.contains("y0 = 20"));
+    let roundtripped = storage.parse_str(&serialized).expect("Mvl roundtrip");
+    assert_eq!(roundtripped.bodies.len(), 1);
+    assert_eq!(roundtripped.bodies[0].motion.position_at(0.0), 20.0);
+}
+
+#[test]
+fn test_reject_negative_gravity_in_scene() {
+    let raw = "[scene]\ngravity = -9.81\n";
+    let storage = KinFileStorage::new();
+    let err = storage.parse_str(raw).unwrap_err();
+    assert!(err.contains("negative"), "expected negative error, got {err}");
+}
+
+#[test]
+fn test_reject_negative_gravity_in_body() {
+    let raw = r#"
+[body.drop]
+motion = "mvl"
+y0 = 10.0
+v0 = 0.0
+g = -9.81
+"#;
+    let storage = KinFileStorage::new();
+    let err = storage.parse_str(raw).unwrap_err();
+    assert!(err.contains("negative"), "expected negative error, got {err}");
+}
+
+#[test]
+fn test_reject_empty_body_id() {
+    let raw = "[body. ]\nmotion = \"mru\"\nx0 = 0.0\nv = 10.0\n";
+    let storage = KinFileStorage::new();
+    assert!(storage.parse_str(raw).is_err());
+}
+
+#[test]
+fn test_reject_duplicate_body_id() {
+    let raw = r#"
+[body.car]
+motion = "mru"
+x0 = 0.0
+v = 10.0
+
+[body.car]
+motion = "mru"
+x0 = 50.0
+v = 20.0
+"#;
+    let storage = KinFileStorage::new();
+    let err = storage.parse_str(raw).unwrap_err();
+    assert!(err.contains("Duplicate body ID 'car'"));
+}
+
+#[test]
+fn test_reject_infinite_body_coordinate() {
+    let raw = "[body.bad]\nmotion = \"mru\"\nx0 = inf\nv = 10.0\n";
+    let storage = KinFileStorage::new();
+    assert!(storage.parse_str(raw).is_err());
+}
+
+#[test]
+fn test_reject_exceeding_max_bodies() {
+    let storage = KinFileStorage::new();
+    let mut raw = String::from("[scene]\nname = \"Crowded\"\n");
+    for i in 0..257 {
+        raw.push_str(&format!("[body.b{i}]\nmotion = \"mru\"\nx0 = 0.0\nv = 1.0\n"));
+    }
+    let err = storage.parse_str(&raw).unwrap_err();
+    assert!(err.contains("maximum allowed bodies"));
+}
+
