@@ -121,7 +121,7 @@ fn test_m2_mruv_scenario_and_multi_curve_sampling() {
         .sample_curve("car_b", CurveType::Acceleration, 0.0, 5.0, 3)
         .expect("sample acceleration");
     assert_eq!(a_curve.points[0].position, 2.0);
-    assert_eq!(a_curve.points[2].position, 2.0);
+    assert_eq!(a_curve.points[2].position, 0.0);
 }
 
 #[test]

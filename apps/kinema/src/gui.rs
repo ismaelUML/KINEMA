@@ -558,7 +558,7 @@ impl KinemaGuiApp {
         };
         self.paint_bodies(&ctx);
         // Draw ropes
-        self.paint_ropes(&painter, rect);
+        self.paint_ropes(&ctx);
     }
 
     fn paint_bodies(&self, ctx: &PaintContext<'_>) {
@@ -1071,28 +1071,34 @@ impl KinemaGuiApp {
             Color32::YELLOW,
         );
 
-        let norm_dist = (body.current_position as f32 * 0.04).clamp(0.0, 0.9);
-        let block_center_x = p_top_left.x + (p_bottom_right.x - p_top_left.x) * norm_dist;
-        let block_center_y = p_top_left.y + (p_bottom_right.y - p_top_left.y) * norm_dist - 10.0;
+        let hyp_len = (ramp_width * ramp_width + ramp_height * ramp_height).sqrt();
+        let ux = ramp_width / hyp_len;
+        let uy = ramp_height / hyp_len;
+        let nx = uy;
+        let ny = -ux;
 
-        let block_rect = Rect::from_center_size(
-            Pos2::new(block_center_x, block_center_y),
-            Vec2::new(28.0, 16.0),
+        let s_pix = (body.current_position as f32 * 8.0).clamp(0.0, hyp_len - 60.0);
+        let p_center = Pos2::new(
+            p_top_left.x + ux * (35.0 + s_pix),
+            p_top_left.y + uy * (35.0 + s_pix),
         );
-        ctx.painter.rect_filled(
-            block_rect,
-            egui::CornerRadius::same(2),
+
+        let half_w = 15.0f32;
+        let h = 16.0f32;
+        let p1 = Pos2::new(p_center.x - ux * half_w, p_center.y - uy * half_w);
+        let p2 = Pos2::new(p_center.x + ux * half_w, p_center.y + uy * half_w);
+        let p3 = Pos2::new(p2.x + nx * h, p2.y + ny * h);
+        let p4 = Pos2::new(p1.x + nx * h, p1.y + ny * h);
+
+        ctx.painter.add(egui::Shape::convex_polygon(
+            vec![p1, p2, p3, p4],
             Color32::from_rgb(255, 170, 50),
-        );
-        ctx.painter.rect_stroke(
-            block_rect,
-            egui::CornerRadius::same(2),
             Stroke::new(1.5, Color32::BLACK),
-            egui::StrokeKind::Inside,
-        );
+        ));
 
+        let label_pos = Pos2::new(p_center.x + nx * (h + 10.0), p_center.y + ny * (h + 10.0));
         ctx.painter.text(
-            Pos2::new(block_center_x, block_center_y - 12.0),
+            label_pos,
             egui::Align2::CENTER_BOTTOM,
             &body.name,
             egui::FontId::monospace(9.0),
@@ -1289,46 +1295,58 @@ impl KinemaGuiApp {
         );
     }
 
-    fn paint_ropes(&self, painter: &egui::Painter, rect: Rect) {
+    fn paint_ropes(&self, ctx: &PaintContext<'_>) {
         let model = self.presenter.model();
-        let center_x = rect.center().x;
-        let center_y = rect.center().y;
+        let rope_scale = 80.0f32;
+        let base_x = (ctx.origin_x + 100.0).clamp(ctx.rect.min.x + 40.0, ctx.rect.max.x - 240.0);
 
         for rope in &model.rope_views {
-            if let Some(first_seg) = rope.segments.first() {
+            if let (Some(first), Some(last)) = (rope.segments.first(), rope.segments.last()) {
                 let p0 = Pos2::new(
-                    center_x + (first_seg.p0[0] as f32 * 25.0),
-                    center_y - (first_seg.p0[1] as f32 * 25.0),
+                    base_x + (first.p0[0] as f32 * rope_scale),
+                    ctx.ground_y - (first.p0[1] as f32 * rope_scale),
                 );
-                painter.rect_filled(
-                    Rect::from_center_size(p0, Vec2::new(12.0, 12.0)),
-                    egui::CornerRadius::same(2),
-                    Color32::from_rgb(110, 125, 145),
-                );
-            }
-            if let Some(last_seg) = rope.segments.last() {
                 let p1 = Pos2::new(
-                    center_x + (last_seg.p1[0] as f32 * 25.0),
-                    center_y - (last_seg.p1[1] as f32 * 25.0),
+                    base_x + (last.p1[0] as f32 * rope_scale),
+                    ctx.ground_y - (last.p1[1] as f32 * rope_scale),
                 );
-                painter.rect_filled(
-                    Rect::from_center_size(p1, Vec2::new(12.0, 12.0)),
+
+                // Overhead mounting beam
+                ctx.painter.line_segment(
+                    [
+                        Pos2::new(p0.x - 20.0, p0.y - 10.0),
+                        Pos2::new(p1.x + 20.0, p1.y - 10.0),
+                    ],
+                    Stroke::new(6.0, Color32::from_rgb(60, 70, 85)),
+                );
+
+                // Brackets and pin studs
+                ctx.painter.rect_filled(
+                    Rect::from_center_size(p0, Vec2::new(14.0, 14.0)),
                     egui::CornerRadius::same(2),
-                    Color32::from_rgb(110, 125, 145),
+                    Color32::from_rgb(130, 145, 165),
                 );
+                ctx.painter.circle_filled(p0, 3.0, Color32::BLACK);
+
+                ctx.painter.rect_filled(
+                    Rect::from_center_size(p1, Vec2::new(14.0, 14.0)),
+                    egui::CornerRadius::same(2),
+                    Color32::from_rgb(130, 145, 165),
+                );
+                ctx.painter.circle_filled(p1, 3.0, Color32::BLACK);
             }
 
             for seg in &rope.segments {
                 let p0 = Pos2::new(
-                    center_x + (seg.p0[0] as f32 * 25.0),
-                    center_y - (seg.p0[1] as f32 * 25.0),
+                    base_x + (seg.p0[0] as f32 * rope_scale),
+                    ctx.ground_y - (seg.p0[1] as f32 * rope_scale),
                 );
                 let p1 = Pos2::new(
-                    center_x + (seg.p1[0] as f32 * 25.0),
-                    center_y - (seg.p1[1] as f32 * 25.0),
+                    base_x + (seg.p1[0] as f32 * rope_scale),
+                    ctx.ground_y - (seg.p1[1] as f32 * rope_scale),
                 );
                 let color = parse_hex_color(&seg.color_hex);
-                painter.line_segment([p0, p1], Stroke::new(3.0, color));
+                ctx.painter.line_segment([p0, p1], Stroke::new(3.5, color));
             }
         }
     }

@@ -360,8 +360,8 @@ fn build_two_cars_mruv_scenario() -> Scene {
     scene.add_body(
         Body::new(
             "car_b",
-            "Car B (MRUV v0=-10, a=+2)",
-            Mruv::new(100.0, -10.0, 2.0),
+            "Car B (MRUV v0=-10, a=+2, Braking)",
+            Mruv::braking(100.0, -10.0, 2.0),
         )
         .with_kind(EntityKind::Vehicle { lane: 1 }),
     );
