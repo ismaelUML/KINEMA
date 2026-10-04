@@ -106,6 +106,134 @@ fn main() {
     }
 
     println!("\nKINEMA M6 (Polish and Delivery) fully operational.");
+
+    // Launch interactive workbench prompt if running in interactive terminal
+    interactive_loop(&mut service, &mut presenter);
+}
+
+fn interactive_loop(service: &mut SimulationService, presenter: &mut UiPresenter) {
+    loop {
+        print_menu_prompt();
+        let choice = match read_line_choice() {
+            Some(c) => c,
+            None => break, // EOF reached (e.g., automated pipe/CI)
+        };
+        if choice == "0" || choice.is_empty() {
+            println!("Saliendo de KINEMA. ¡Hasta luego!");
+            break;
+        }
+        dispatch_choice(choice.as_str(), service, presenter);
+    }
+}
+
+fn read_line_choice() -> Option<String> {
+    use std::io::{stdin, stdout, Write};
+    let _ = stdout().flush();
+    let mut line = String::new();
+    let bytes = stdin().read_line(&mut line).ok()?;
+    if bytes == 0 {
+        return None;
+    }
+    Some(line.trim().to_string())
+}
+
+fn dispatch_choice(choice: &str, service: &mut SimulationService, presenter: &mut UiPresenter) {
+    match choice {
+        "1" => handle_load_scenario(service, presenter),
+        "2" => handle_step(service, presenter, 60),
+        "3" => handle_step(service, presenter, -60),
+        "4" => handle_toggle_theme(presenter),
+        "5" => handle_export_png(service),
+        "6" => handle_show_equations(presenter),
+        _ => println!("Opción '{}' no reconocida.", choice),
+    }
+}
+
+fn print_menu_prompt() {
+    println!("\n=======================================================");
+    println!("  K I N E M A   P H Y S I C S   W O R K B E N C H");
+    println!("=======================================================");
+    println!(" 1. Cargar escenario físico del catálogo");
+    println!(" 2. Avanzar 1 segundo (+60 frames)");
+    println!(" 3. Retroceder 1 segundo (-60 frames)");
+    println!(" 4. Cambiar Tema (Classic -> Phosphor -> Amber)");
+    println!(" 5. Exportar Canvas a 'kinema_render.png'");
+    println!(" 6. Ver Referencia de Ecuaciones y Ayuda");
+    println!(" 0. Salir (o presiona Enter)");
+    print!("> Opción: ");
+}
+
+fn handle_load_scenario(service: &mut SimulationService, presenter: &mut UiPresenter) {
+    let list = service.list_scenarios();
+    println!("\nCatálogo de Escenarios:");
+    for (i, name) in list.iter().enumerate() {
+        println!(" [{}] {}", i + 1, name);
+    }
+    print!("Elige el número de escenario: ");
+    if let Some(num_str) = read_line_choice() {
+        if let Ok(idx) = num_str.parse::<usize>() {
+            if idx >= 1 && idx <= list.len() {
+                let name = &list[idx - 1];
+                let _ = service.load_scenario(name);
+                presenter.consume_snapshot(service.scene(), service.current_time());
+                println!("\nEscenario '{}' cargado con éxito.", name);
+                print_view_model(presenter.model());
+            }
+        }
+    }
+}
+
+fn handle_step(service: &mut SimulationService, presenter: &mut UiPresenter, steps: i32) {
+    if steps > 0 {
+        for _ in 0..steps {
+            service.step_forward();
+        }
+    } else {
+        for _ in 0..(-steps) {
+            service.step_backward();
+        }
+    }
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    print_view_model(presenter.model());
+}
+
+fn handle_toggle_theme(presenter: &mut UiPresenter) {
+    let next = match presenter.theme() {
+        kinema_adapter_ui::UiTheme::Classic => kinema_adapter_ui::UiTheme::Phosphor,
+        kinema_adapter_ui::UiTheme::Phosphor => kinema_adapter_ui::UiTheme::Amber,
+        kinema_adapter_ui::UiTheme::Amber => kinema_adapter_ui::UiTheme::Classic,
+    };
+    presenter.set_theme(next);
+    println!(
+        "\nTema cambiado a: {:?} (Color de acento: {})",
+        next,
+        presenter.model().palette.text_primary
+    );
+}
+
+fn handle_export_png(service: &SimulationService) {
+    use kinema_ports::ImageExporter;
+    let exporter = kinema_adapter_storage::PngCanvasExporter::new(640, 480);
+    let token = kinema_ports::CancellationToken::new();
+    let filename = "kinema_render.png";
+    match exporter.export_png(service.scene(), service.current_time(), filename, &token) {
+        Ok(()) => {
+            println!(
+                "\n[OK] Imagen del canvas exportada como '{}' (640x480 RGB).",
+                filename
+            );
+            println!("Puedes abrir '{}' en tu explorador de archivos.", filename);
+        }
+        Err(e) => println!("\n[ERROR] Falló la exportación: {}", e),
+    }
+}
+
+fn handle_show_equations(presenter: &mut UiPresenter) {
+    presenter.open_help(kinema_adapter_ui::HelpTopic::EquationReference);
+    if let Some(txt) = &presenter.model().help_text {
+        println!("\n--- Referencia de Ecuaciones y Ayuda ---\n{}", txt);
+    }
+    presenter.close_help();
 }
 
 fn print_markers(model: &UiViewModel) {
