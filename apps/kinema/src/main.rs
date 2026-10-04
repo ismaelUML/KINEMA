@@ -8,38 +8,38 @@ use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl, SnapshotSin
 
 fn main() {
     println!("=======================================================");
-    println!(" K I N E M A  --  Interactive Physics Workbench (M3)   ");
+    println!(" K I N E M A  --  Interactive Physics Workbench (M4)   ");
     println!("=======================================================");
 
-    // Wire application and load canonical M3 preset (20m free fall drop)
+    // Wire application and load canonical M4 preset (Block with friction threshold)
     let mut service = SimulationService::new(Scene::default());
     service
-        .load_scenario("20m_free_fall")
-        .expect("Failed to load M3 preset");
+        .load_scenario("block_friction_threshold")
+        .expect("Failed to load M4 preset");
 
     let _storage = KinFileStorage::new();
     let mut presenter = UiPresenter::new();
 
-    // Snapshot at t=0
+    // Snapshot at t=0 (Below static threshold: F_app = 20 N <= 24.525 N)
     presenter.consume_snapshot(service.scene(), service.current_time());
     print_view_model(presenter.model());
 
-    // Advance to ground impact instant (t ≈ 2.019 s)
-    service.seek(2.01927);
-    presenter.set_graph_kind(GraphKind::VelocityTime);
-    presenter.consume_snapshot(service.scene(), service.current_time());
-    println!("\n--- Advanced to ground impact instant (t ≈ 2.02 s) ---");
-    print_view_model(presenter.model());
-
-    // Instant edit initial height: y0 = 45.0 m
+    // Instant edit applied force to pass static threshold: F_app = 30 N > 24.525 N
+    println!("\n--- Passing static friction threshold (F_app: 20 N -> 30 N) ---");
     service
-        .edit_parameter("ball", "y0", 45.0)
+        .edit_parameter("block", "f_app", 30.0)
         .expect("Parameter edit failed");
     presenter.consume_snapshot(service.scene(), service.current_time());
-    println!("\n--- Edited Ball drop height to 45.0 m ---");
     print_view_model(presenter.model());
 
-    println!("\nKINEMA M3 (MVL & Control) verified successfully.");
+    // Advance simulation forward: t = 2.0 s under constant kinetic acceleration
+    service.seek(2.0);
+    presenter.set_graph_kind(GraphKind::VelocityTime);
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    println!("\n--- Advanced to t = 2.0 s ---");
+    print_view_model(presenter.model());
+
+    println!("\nKINEMA M4 (Dynamics & Friction) verified successfully.");
 }
 
 fn print_markers(model: &UiViewModel) {
@@ -57,11 +57,24 @@ fn print_markers(model: &UiViewModel) {
     }
 }
 
+fn print_fbd(model: &UiViewModel) {
+    for fbd in &model.fbd_views {
+        println!(
+            " - FBD [{}]: State = {}, Net Force = {:.2} N (W={:.2}N, N={:.2}N, f_roz={:.2}N, F_app={:.2}N)",
+            fbd.body_id, fbd.friction_state, fbd.net_force, fbd.weight, fbd.normal, fbd.friction, fbd.applied_force
+        );
+        for arrow in &fbd.arrows {
+            println!("     -> Force Arrow: {} ({})", arrow.label, arrow.direction);
+        }
+    }
+}
+
 fn print_view_model(model: &UiViewModel) {
     println!("Title:     {}", model.window_title);
     println!("Status:    {}", model.status_message);
     println!("Inspector: {}", model.meeting_diagnosis);
     print_markers(model);
+    print_fbd(model);
     for body in &model.bodies {
         println!(
             " - [{}]: {} => pos = {:.2} m, v = {:.2} m/s, a = {:.2} m/s²",

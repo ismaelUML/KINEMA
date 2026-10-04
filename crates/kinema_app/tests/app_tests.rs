@@ -276,4 +276,3 @@ fn test_m4_incline_plane_slide_scenario() {
     assert_eq!(updated_fbds[0].1.state, FrictionState::Kinetic);
     assert!(updated_fbds[0].1.net_force < 0.0);
 }
-

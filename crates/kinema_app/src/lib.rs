@@ -120,9 +120,7 @@ impl SimulationService {
             .iter()
             .filter_map(|b| {
                 let v = b.motion.velocity_at(self.time);
-                b.motion
-                    .free_body_diagram(v)
-                    .map(|fbd| (b.id.clone(), fbd))
+                b.motion.free_body_diagram(v).map(|fbd| (b.id.clone(), fbd))
             })
             .collect()
     }
@@ -412,10 +410,6 @@ fn build_heavy_crate_scenario() -> Scene {
     let g = GravityPreset::EARTH_STANDARD;
     scene.gravity = g;
     let crate_body = BlockDynamics::horizontal(50.0, 0.4, 0.25, 250.0).with_gravity(g);
-    scene.add_body(Body::new(
-        "crate",
-        "Heavy Crate (50kg, F=250N)",
-        crate_body,
-    ));
+    scene.add_body(Body::new("crate", "Heavy Crate (50kg, F=250N)", crate_body));
     scene
 }

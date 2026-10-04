@@ -190,3 +190,97 @@ fn test_m3_end_to_end_acceptance() {
     let redone_apex = &presenter.model().apex_markers[0];
     assert!((redone_apex.time - (30.0 / 9.81)).abs() < 1e-4);
 }
+
+#[test]
+fn test_m4_end_to_end_acceptance() {
+    use kinema_domain::dynamics::BlockDynamics;
+    use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
+
+    let empty = Scene::new("Empty");
+    let mut service = SimulationService::new(empty);
+    let mut presenter = UiPresenter::new();
+
+    // 1. Load canonical M4 preset: Block on horizontal surface with friction
+    service
+        .load_scenario("block_friction_threshold")
+        .expect("M4 preset must load");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    let initial_model = presenter.model();
+    assert_eq!(initial_model.bodies.len(), 1);
+    assert_eq!(initial_model.fbd_views.len(), 1);
+
+    // Initial state: F_app = 20 N <= fs_max = 24.525 N => STATIC
+    let initial_fbd = &initial_model.fbd_views[0];
+    assert_eq!(initial_fbd.friction_state, "STATIC");
+    assert_eq!(initial_fbd.net_force, 0.0);
+    assert_eq!(initial_model.bodies[0].current_acceleration, 0.0);
+
+    // Scrubbing while at rest: stays at rest
+    service.seek(5.0);
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    assert_eq!(presenter.model().bodies[0].current_position, 0.0);
+    assert_eq!(presenter.model().bodies[0].current_velocity, 0.0);
+
+    // 2. In-frame parameter edit: increase F_app to 30 N > 24.525 N
+    service
+        .edit_parameter("block", "f_app", 30.0)
+        .expect("edit f_app to 30 N");
+    service.seek(0.0);
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    // Transitions to KINETIC
+    let kinetic_fbd = &presenter.model().fbd_views[0];
+    assert_eq!(kinetic_fbd.friction_state, "KINETIC");
+    assert!((kinetic_fbd.net_force - 15.285).abs() < 1e-3);
+    let expected_a = 15.285 / 5.0; // 3.057 m/s^2
+
+    // Advance 2.0 s: analytic rate verification
+    service.seek(2.0);
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let body = &presenter.model().bodies[0];
+    assert!((body.current_velocity - (expected_a * 2.0)).abs() < 1e-4);
+    assert!((body.current_position - (0.5 * expected_a * 4.0)).abs() < 1e-4);
+
+    // 3. Semi-Implicit Euler fixed-timestep integrator comparison vs analytic bound
+    let dt: f64 = 1.0 / 240.0;
+    let block = BlockDynamics::horizontal(5.0, 0.5, 0.3, 30.0).with_gravity(9.81);
+    let mut num_pos = 0.0;
+    let mut num_vel = 0.0;
+    for _ in 0..480 {
+        let (np, nv, _, _) = block.step_euler(num_pos, num_vel, dt);
+        num_pos = np;
+        num_vel = nv;
+    }
+    // Integrator error bound verification:
+    // Velocity is exact for constant acceleration
+    assert!((num_vel - body.current_velocity).abs() < 1e-9);
+    // Position error strictly < 0.02 m
+    assert!((num_pos - body.current_position).abs() < 0.02);
+
+    // 4. Persistence roundtrip through KinFileStorage
+    let storage = KinFileStorage::new();
+    let serialized = storage.serialize_scene(service.scene());
+    let reloaded = storage.parse_str(&serialized).expect("roundtrip parse");
+    assert_eq!(reloaded.bodies.len(), 1);
+    let mut reloaded_service = SimulationService::new(reloaded);
+    reloaded_service.seek(2.0);
+    let mut reloaded_presenter = UiPresenter::new();
+    reloaded_presenter.consume_snapshot(reloaded_service.scene(), reloaded_service.current_time());
+    assert_eq!(
+        reloaded_presenter.model().fbd_views[0].friction_state,
+        "KINETIC"
+    );
+    assert!(
+        (reloaded_presenter.model().bodies[0].current_velocity - (expected_a * 2.0)).abs() < 1e-4
+    );
+
+    // 5. Bounded Undo/Redo
+    assert!(service.undo());
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    assert_eq!(presenter.model().fbd_views[0].friction_state, "STATIC");
+
+    assert!(service.redo());
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    assert_eq!(presenter.model().fbd_views[0].friction_state, "KINETIC");
+}

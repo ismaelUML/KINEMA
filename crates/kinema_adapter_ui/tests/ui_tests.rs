@@ -165,4 +165,3 @@ fn test_ui_presenter_m4_dynamics_fbd() {
     assert_eq!(fbd_view.net_force, 0.0);
     assert_eq!(fbd_view.arrows.len(), 4);
 }
-

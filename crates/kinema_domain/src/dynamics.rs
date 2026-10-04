@@ -147,13 +147,19 @@ impl BlockDynamics {
             (-f_act, FrictionState::Static)
         } else {
             let dir = if f_act > 0.0 { 1.0 } else { -1.0 };
-            (-dir * self.kinetic_friction_magnitude(), FrictionState::Kinetic)
+            (
+                -dir * self.kinetic_friction_magnitude(),
+                FrictionState::Kinetic,
+            )
         }
     }
 
     fn eval_kinetic_friction(&self, v: f64) -> (f64, FrictionState) {
         let dir = if v > 0.0 { 1.0 } else { -1.0 };
-        (-dir * self.kinetic_friction_magnitude(), FrictionState::Kinetic)
+        (
+            -dir * self.kinetic_friction_magnitude(),
+            FrictionState::Kinetic,
+        )
     }
 
     /// Constructs the complete Free-Body Diagram at instantaneous velocity v.
@@ -204,13 +210,23 @@ impl BlockDynamics {
         let a = fbd.net_force / self.mass;
         let next_v_cand = vel + a * dt;
 
-        if is_stick_zero_crossing(vel, next_v_cand, self.active_driving_force(), self.max_static_friction()) {
+        if is_stick_zero_crossing(
+            vel,
+            next_v_cand,
+            self.active_driving_force(),
+            self.max_static_friction(),
+        ) {
             (pos, 0.0, 0.0, FrictionState::Static)
         } else {
             let next_v = next_v_cand;
             let next_pos = pos + next_v * dt;
             let next_fbd = self.free_body_diagram(next_v);
-            (next_pos, next_v, next_fbd.net_force / self.mass, next_fbd.state)
+            (
+                next_pos,
+                next_v,
+                next_fbd.net_force / self.mass,
+                next_fbd.state,
+            )
         }
     }
 }
