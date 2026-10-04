@@ -1,8 +1,9 @@
 //! Application Layer / Use Case Orchestration.
 
 use kinema_domain::{
-    analyze_meeting, BlockDynamics, Body, FreeBodyDiagram, GravityPreset, MeetingOutcome, Motion,
-    Motion1D, Mru, Mruv, Mvl, ParametricLaw, Scene,
+    analyze_meeting, AtwoodMachine, BlockDynamics, Body, FreeBodyDiagram, GravityPreset,
+    MeetingOutcome, Motion, Motion1D, Mru, Mruv, Mvl, ParametricLaw, ParticleRope, Scene,
+    TablePulleySystem,
 };
 use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
 
@@ -125,6 +126,20 @@ impl SimulationService {
             .collect()
     }
 
+    /// Evaluates rope tension for all bodies operating ideal pulley systems.
+    pub fn pulley_tensions(&self) -> Vec<(String, f64)> {
+        self.scene
+            .bodies
+            .iter()
+            .filter_map(|b| b.motion.pulley_tension().map(|t| (b.id.clone(), t)))
+            .collect()
+    }
+
+    /// Accesses all particle-chain ropes in the scene.
+    pub fn ropes(&self) -> &[ParticleRope] {
+        &self.scene.ropes
+    }
+
     /// Samples kinematic curve (position, velocity, or acceleration) across [t_start, t_end].
     pub fn sample_curve(
         &self,
@@ -199,6 +214,12 @@ impl SimulationControl for SimulationService {
 
     fn step_forward(&mut self) {
         self.time += 1.0 / 60.0;
+        let substep = 1.0 / 240.0;
+        for _ in 0..4 {
+            for rope in &mut self.scene.ropes {
+                rope.step(substep);
+            }
+        }
     }
 
     fn step_backward(&mut self) {
@@ -267,33 +288,53 @@ impl ScenarioCatalog for SimulationService {
             "block_friction_threshold".to_string(),
             "incline_plane_slide".to_string(),
             "heavy_crate_push".to_string(),
+            "atwood_machine".to_string(),
+            "table_pulley_friction".to_string(),
+            "hanging_catenary_rope".to_string(),
+            "rope_surface_friction".to_string(),
         ]
     }
 
     fn load_scenario(&mut self, name: &str) -> Result<Scene, String> {
-        let scene = match name {
-            "two_cars_mru" | "Two cars meeting" => build_two_cars_scenario(),
-            "two_cars_mruv" | "Two cars meeting (MRU vs MRUV)" => build_two_cars_mruv_scenario(),
-            "parallel_cars" => build_parallel_scenario(),
-            "coinciding_cars" => build_coinciding_scenario(),
-            "20m_free_fall" | "Free fall 20m drop (Earth)" => build_20m_free_fall_scenario(),
-            "feather_and_hammer_moon" | "Feather and Hammer (Moon)" => {
-                build_feather_hammer_scenario()
-            }
-            "vertical_projectile" | "Vertical projectile launch (Earth)" => {
-                build_vertical_projectile_scenario()
-            }
-            "block_friction_threshold" | "Block with friction threshold" => {
-                build_block_friction_scenario()
-            }
-            "incline_plane_slide" | "Incline plane sliding angle" => build_incline_slide_scenario(),
-            "heavy_crate_push" | "Heavy crate push" => build_heavy_crate_scenario(),
-            _ => return Err(format!("Unknown scenario '{}'", name)),
-        };
+        let scene = resolve_scenario(name).ok_or_else(|| format!("Unknown scenario '{}'", name))?;
         self.push_undo();
         self.time = 0.0;
         self.scene = scene.clone();
         Ok(scene)
+    }
+}
+
+fn resolve_scenario(name: &str) -> Option<Scene> {
+    match name {
+        "two_cars_mru" | "Two cars meeting" => Some(build_two_cars_scenario()),
+        "two_cars_mruv" | "Two cars meeting (MRU vs MRUV)" => Some(build_two_cars_mruv_scenario()),
+        "parallel_cars" => Some(build_parallel_scenario()),
+        "coinciding_cars" => Some(build_coinciding_scenario()),
+        "20m_free_fall" | "Free fall 20m drop (Earth)" => Some(build_20m_free_fall_scenario()),
+        "feather_and_hammer_moon" | "Feather and Hammer (Moon)" => {
+            Some(build_feather_hammer_scenario())
+        }
+        "vertical_projectile" | "Vertical projectile launch (Earth)" => {
+            Some(build_vertical_projectile_scenario())
+        }
+        "block_friction_threshold" | "Block with friction threshold" => {
+            Some(build_block_friction_scenario())
+        }
+        "incline_plane_slide" | "Incline plane sliding angle" => {
+            Some(build_incline_slide_scenario())
+        }
+        "heavy_crate_push" | "Heavy crate push" => Some(build_heavy_crate_scenario()),
+        "atwood_machine" | "Atwood machine" => Some(build_atwood_scenario()),
+        "table_pulley_friction" | "Table pulley with friction" => {
+            Some(build_table_pulley_scenario())
+        }
+        "hanging_catenary_rope" | "Hanging catenary rope" => {
+            Some(build_catenary_rope_scenario())
+        }
+        "rope_surface_friction" | "Rope on surface with friction" => {
+            Some(build_rope_friction_scenario())
+        }
+        _ => None,
     }
 }
 
@@ -413,3 +454,57 @@ fn build_heavy_crate_scenario() -> Scene {
     scene.add_body(Body::new("crate", "Heavy Crate (50kg, F=250N)", crate_body));
     scene
 }
+
+fn build_atwood_scenario() -> Scene {
+    let mut scene = Scene::new("Atwood Machine (2kg vs 3kg)");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    let atwood = AtwoodMachine::new(2.0, 3.0)
+        .expect("valid masses")
+        .with_gravity(g);
+    scene.add_body(Body::new(
+        "atwood",
+        "Atwood Machine (m1=2kg, m2=3kg)",
+        atwood,
+    ));
+    scene
+}
+
+fn build_table_pulley_scenario() -> Scene {
+    let mut scene = Scene::new("Table Pulley with Friction");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    let system = TablePulleySystem::new(10.0, 6.0, 0.5, 0.3)
+        .expect("valid system")
+        .with_gravity(g);
+    scene.add_body(Body::new(
+        "table_pulley",
+        "Table Pulley (m1=10kg, m2=6kg, μs=0.5, μk=0.3)",
+        system,
+    ));
+    scene
+}
+
+fn build_catenary_rope_scenario() -> Scene {
+    let mut scene = Scene::new("Hanging Catenary Rope");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    let mut rope =
+        ParticleRope::new_catenary([0.0, 3.0], [2.0, 3.0], 2.5, 1.0).expect("valid catenary");
+    let _ = rope.set_pinned(23, true);
+    rope.relax_constraints();
+    scene.add_rope(rope);
+    scene
+}
+
+fn build_rope_friction_scenario() -> Scene {
+    let mut scene = Scene::new("Rope on Surface with Friction");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    let rope = ParticleRope::new_catenary([0.0, 1.0], [2.0, 1.0], 2.5, 1.0)
+        .expect("valid rope")
+        .with_surface(0.0, 0.4);
+    scene.add_rope(rope);
+    scene
+}
+

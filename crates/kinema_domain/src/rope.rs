@@ -72,14 +72,24 @@ impl ParticleRope {
         let node_mass = total_mass / (node_count as f64);
         let mut nodes = Vec::with_capacity(node_count);
 
-        let dx = (p1[0] - p0[0]) / ((node_count - 1) as f64);
-        let dy = (p1[1] - p0[1]) / ((node_count - 1) as f64);
+        let chord_sq = (p1[0] - p0[0]).powi(2) + (p1[1] - p0[1]).powi(2);
+        let sag = if length * length > chord_sq {
+            (length * length - chord_sq).sqrt() * 0.5
+        } else {
+            0.0
+        };
 
         for i in 0..node_count {
-            let x = p0[0] + dx * (i as f64);
-            let y = p0[1] + dy * (i as f64);
+            let frac = (i as f64) / ((node_count - 1) as f64);
+            let x = p0[0] + (p1[0] - p0[0]) * frac;
+            let y = p0[1] + (p1[1] - p0[1]) * frac - 4.0 * sag * frac * (1.0 - frac);
             let pinned = i == 0;
             nodes.push(RopeNode::new(x, y, node_mass, pinned));
+        }
+
+        let d0 = length / ((node_count - 1) as f64);
+        for _ in 0..32 {
+            relax_all_segments(&mut nodes, d0);
         }
 
         Ok(Self {
@@ -111,6 +121,17 @@ impl ParticleRope {
             Ok(())
         } else {
             Err("Node index out of bounds")
+        }
+    }
+
+    /// Enforces distance constraints across all segments for `relaxation_passes` iterations.
+    pub fn relax_constraints(&mut self) {
+        let d0 = self.rest_segment_length();
+        for _ in 0..self.relaxation_passes {
+            relax_all_segments(&mut self.nodes, d0);
+            if let Some(sy) = self.surface_y {
+                clamp_surface(&mut self.nodes, sy);
+            }
         }
     }
 

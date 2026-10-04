@@ -1,5 +1,5 @@
 use kinema_app::SimulationService;
-use kinema_domain::motion::Mru;
+use kinema_domain::motion::{Motion1D, Mru};
 use kinema_domain::scene::{Body, Scene};
 use kinema_ports::{SceneEditing, SimulationControl};
 
@@ -276,3 +276,95 @@ fn test_m4_incline_plane_slide_scenario() {
     assert_eq!(updated_fbds[0].1.state, FrictionState::Kinetic);
     assert!(updated_fbds[0].1.net_force < 0.0);
 }
+
+#[test]
+fn test_m5_atwood_scenario_and_tensions() {
+    use kinema_ports::{ScenarioCatalog, SimulationControl};
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("atwood_machine")
+        .expect("load atwood preset");
+
+    let tensions = service.pulley_tensions();
+    assert_eq!(tensions.len(), 1);
+    assert_eq!(tensions[0].0, "atwood");
+    // m1=2, m2=3, g=9.81 => T = 2 * 2 * 3 * 9.81 / 5 = 23.544 N
+    assert!((tensions[0].1 - (12.0 * 9.81 / 5.0)).abs() < 1e-4);
+
+    // Step forward 1 second (60 steps)
+    for _ in 0..60 {
+        service.step_forward();
+    }
+    assert!((service.current_time() - 1.0).abs() < 1e-6);
+    let body = &service.scene().bodies[0];
+    let a = (3.0 - 2.0) * 9.81 / 5.0;
+    assert!((body.motion.velocity_at(1.0) - a).abs() < 1e-4);
+}
+
+#[test]
+fn test_m5_table_pulley_scenario_and_parameter_edit() {
+    use kinema_ports::{ScenarioCatalog, SceneEditing};
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("table_pulley_friction")
+        .expect("load table pulley");
+
+    let tensions = service.pulley_tensions();
+    assert_eq!(tensions.len(), 1);
+
+    // Edit hanging mass m2 from 6.0 to 1.0 kg (1.0 * g < 0.5 * 10 * g => transitions to static!)
+    service
+        .edit_parameter("table_pulley", "m2", 1.0)
+        .expect("edit m2 to 1.0");
+    let updated_tensions = service.pulley_tensions();
+    // Static tension: T = m2 * g = 9.81 N
+    assert!((updated_tensions[0].1 - 9.81).abs() < 1e-4);
+}
+
+#[test]
+fn test_m5_catenary_rope_simulation_step() {
+    use kinema_ports::{ScenarioCatalog, SimulationControl};
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("hanging_catenary_rope")
+        .expect("load catenary");
+
+    assert_eq!(service.ropes().len(), 1);
+    let initial_stretch = service.ropes()[0].stretch_ratio();
+    assert!(initial_stretch < 0.02);
+
+    // Advance 120 frames (2.0s wall clock, 480 sub-steps)
+    for _ in 0..120 {
+        service.step_forward();
+    }
+    assert!((service.current_time() - 2.0).abs() < 1e-6);
+    let final_stretch = service.ropes()[0].stretch_ratio();
+    assert!(
+        final_stretch < 0.01,
+        "Stretch must stay under 1%, got {:.4}%",
+        final_stretch * 100.0
+    );
+}
+
+#[test]
+fn test_m5_rope_surface_friction_scenario() {
+    use kinema_ports::ScenarioCatalog;
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("rope_surface_friction")
+        .expect("load surface rope");
+
+    let ropes = service.ropes();
+    assert_eq!(ropes.len(), 1);
+    assert_eq!(ropes[0].surface_y, Some(0.0));
+    assert_eq!(ropes[0].friction_mu, 0.4);
+}
+
