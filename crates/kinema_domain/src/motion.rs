@@ -161,11 +161,161 @@ impl ParametricLaw for Mruv {
     }
 }
 
-/// Dynamic motion discriminator supporting both MRU and MRUV.
+/// Planetary gravitational acceleration presets.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GravityPreset {
+    pub name: &'static str,
+    pub g: f64,
+}
+
+impl GravityPreset {
+    pub const EARTH: f64 = 9.80665;
+    pub const EARTH_STANDARD: f64 = 9.81;
+    pub const MOON: f64 = 1.62;
+    pub const MARS: f64 = 3.71;
+    pub const JUPITER: f64 = 24.79;
+
+    pub fn all() -> &'static [GravityPreset] {
+        &[
+            GravityPreset {
+                name: "Earth",
+                g: Self::EARTH_STANDARD,
+            },
+            GravityPreset {
+                name: "Moon",
+                g: Self::MOON,
+            },
+            GravityPreset {
+                name: "Mars",
+                g: Self::MARS,
+            },
+            GravityPreset {
+                name: "Jupiter",
+                g: Self::JUPITER,
+            },
+        ]
+    }
+}
+
+/// Free Vertical Motion (MVL / Caída Libre y Tiro Vertical): y(t) = y0 + v0 * t - 0.5 * g * t^2
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Mvl {
+    pub y0: f64,
+    pub v0: f64,
+    pub g: f64,
+}
+
+impl Mvl {
+    pub fn new(y0: f64, v0: f64, g: f64) -> Self {
+        Self { y0, v0, g }
+    }
+
+    /// Time to apex when thrown upwards: t_up = v0 / g
+    pub fn time_to_apex(&self) -> Option<f64> {
+        if self.g > 0.0 && self.v0 > 0.0 {
+            Some(self.v0 / self.g)
+        } else {
+            None
+        }
+    }
+
+    /// Maximum height reached: h_max = y0 + v0^2 / (2g)
+    pub fn max_height(&self) -> f64 {
+        if let Some(t_up) = self.time_to_apex() {
+            self.position_at(t_up)
+        } else {
+            self.y0
+        }
+    }
+
+    /// Ground impact instant (y = 0): t_i = (v0 + sqrt(v0^2 + 2*g*y0)) / g
+    pub fn impact_instant(&self) -> Option<f64> {
+        if self.g <= 0.0 {
+            return None;
+        }
+        let discriminant = self.v0 * self.v0 + 2.0 * self.g * self.y0;
+        if discriminant >= 0.0 {
+            let t = (self.v0 + discriminant.sqrt()) / self.g;
+            if t >= 0.0 {
+                return Some(t);
+            }
+        }
+        None
+    }
+
+    /// Impact speed magnitude: |v_i| = sqrt(v0^2 + 2*g*y0)
+    pub fn impact_speed(&self) -> Option<f64> {
+        if self.g <= 0.0 {
+            return None;
+        }
+        let discriminant = self.v0 * self.v0 + 2.0 * self.g * self.y0;
+        if discriminant >= 0.0 {
+            Some(discriminant.sqrt())
+        } else {
+            None
+        }
+    }
+}
+
+impl Motion1D for Mvl {
+    fn position_at(&self, t: f64) -> f64 {
+        self.y0 + self.v0 * t - 0.5 * self.g * t * t
+    }
+
+    fn velocity_at(&self, t: f64) -> f64 {
+        self.v0 - self.g * t
+    }
+
+    fn acceleration_at(&self, _t: f64) -> f64 {
+        -self.g
+    }
+}
+
+impl ParametricLaw for Mvl {
+    fn formula_text(&self) -> String {
+        let half_g = 0.5 * self.g;
+        let v_sign = if self.v0 >= 0.0 { "+" } else { "-" };
+        format!(
+            "y(t) = {:.2} {} {:.2} · t - {:.2} · t²",
+            self.y0,
+            v_sign,
+            self.v0.abs(),
+            half_g
+        )
+    }
+
+    fn parameters(&self) -> Vec<(&'static str, f64)> {
+        vec![("y0", self.y0), ("v0", self.v0), ("g", self.g)]
+    }
+
+    fn set_parameter(&mut self, name: &str, value: f64) -> Result<(), &'static str> {
+        match name {
+            "y0" | "x0" => {
+                self.y0 = value;
+                Ok(())
+            }
+            "v0" | "v" => {
+                self.v0 = value;
+                Ok(())
+            }
+            "g" => {
+                if value < 0.0 {
+                    return Err("gravity must be non-negative");
+                }
+                self.g = value;
+                Ok(())
+            }
+            _ => Err("unknown parameter"),
+        }
+    }
+}
+
+/// Dynamic motion discriminator supporting MRU, MRUV and MVL.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Motion {
     Mru(Mru),
     Mruv(Mruv),
+    Mvl(Mvl),
 }
 
 impl Motion {
@@ -173,6 +323,7 @@ impl Motion {
         match self {
             Motion::Mru(_) => None,
             Motion::Mruv(m) => m.stopping_time(),
+            Motion::Mvl(m) => m.time_to_apex(),
         }
     }
 }
@@ -182,6 +333,7 @@ impl Motion1D for Motion {
         match self {
             Motion::Mru(m) => m.position_at(t),
             Motion::Mruv(m) => m.position_at(t),
+            Motion::Mvl(m) => m.position_at(t),
         }
     }
 
@@ -189,6 +341,7 @@ impl Motion1D for Motion {
         match self {
             Motion::Mru(m) => m.velocity_at(t),
             Motion::Mruv(m) => m.velocity_at(t),
+            Motion::Mvl(m) => m.velocity_at(t),
         }
     }
 
@@ -196,6 +349,7 @@ impl Motion1D for Motion {
         match self {
             Motion::Mru(m) => m.acceleration_at(t),
             Motion::Mruv(m) => m.acceleration_at(t),
+            Motion::Mvl(m) => m.acceleration_at(t),
         }
     }
 }
@@ -205,6 +359,7 @@ impl ParametricLaw for Motion {
         match self {
             Motion::Mru(m) => m.formula_text(),
             Motion::Mruv(m) => m.formula_text(),
+            Motion::Mvl(m) => m.formula_text(),
         }
     }
 
@@ -212,6 +367,7 @@ impl ParametricLaw for Motion {
         match self {
             Motion::Mru(m) => m.parameters(),
             Motion::Mruv(m) => m.parameters(),
+            Motion::Mvl(m) => m.parameters(),
         }
     }
 
@@ -219,6 +375,7 @@ impl ParametricLaw for Motion {
         match self {
             Motion::Mru(m) => m.set_parameter(name, value),
             Motion::Mruv(m) => m.set_parameter(name, value),
+            Motion::Mvl(m) => m.set_parameter(name, value),
         }
     }
 }
@@ -232,5 +389,11 @@ impl From<Mru> for Motion {
 impl From<Mruv> for Motion {
     fn from(m: Mruv) -> Self {
         Motion::Mruv(m)
+    }
+}
+
+impl From<Mvl> for Motion {
+    fn from(m: Mvl) -> Self {
+        Motion::Mvl(m)
     }
 }

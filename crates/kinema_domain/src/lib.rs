@@ -9,5 +9,5 @@ pub use meeting::{
     analyze_meeting, analyze_mru_meeting, meeting_times, MeetingInstant, MeetingOutcome, Quadratic,
     Roots,
 };
-pub use motion::{Motion, Motion1D, Mru, Mruv, ParametricLaw};
+pub use motion::{GravityPreset, Motion, Motion1D, Mru, Mruv, Mvl, ParametricLaw};
 pub use scene::{Body, Scene};

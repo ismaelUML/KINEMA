@@ -173,3 +173,65 @@ fn test_mruv_parametric_law_formatting() {
     car.set_parameter("a", -4.0).expect("a should be valid");
     assert_eq!(car.formula_text(), "x(t) = 100.00 - 10.00 · t - 2.00 · t²");
 }
+
+#[test]
+fn test_m3_20m_drop_acceptance_criteria() {
+    use kinema_domain::motion::{Motion1D, Mvl};
+
+    // Acceptance requirement: y0 = 20m, v0 = 0, g = 9.81 m/s²
+    // Impact instant about 2.019 s and impact speed about 19.8 m/s
+    let drop = Mvl::new(20.0, 0.0, 9.81);
+    let t_i = drop.impact_instant().expect("must reach ground");
+    let v_i = drop.impact_speed().expect("must have impact speed");
+
+    assert!(
+        (t_i - 2.019).abs() < 0.001,
+        "Impact instant {} must be about 2.019 s",
+        t_i
+    );
+    assert!(
+        (v_i - 19.8).abs() < 0.05,
+        "Impact speed {} must be about 19.8 m/s",
+        v_i
+    );
+
+    // Position at impact must be 0
+    assert!(drop.position_at(t_i).abs() < 1e-4);
+    assert_eq!(drop.time_to_apex(), None);
+    assert_eq!(drop.max_height(), 20.0);
+}
+
+#[test]
+fn test_m3_vertical_projectile_apex_and_formula() {
+    use kinema_domain::motion::{Motion1D, Mvl, ParametricLaw};
+
+    let mut projectile = Mvl::new(0.0, 19.62, 9.81);
+    assert_eq!(projectile.time_to_apex(), Some(2.0));
+    assert_eq!(projectile.max_height(), 19.62);
+    assert_eq!(projectile.velocity_at(2.0), 0.0);
+
+    let t_i = projectile.impact_instant().expect("impacts at 4.0s");
+    assert!((t_i - 4.0).abs() < 1e-9);
+
+    assert_eq!(
+        projectile.formula_text(),
+        "y(t) = 0.00 + 19.62 · t - 4.91 · t²"
+    );
+
+    projectile.set_parameter("y0", 10.0).unwrap();
+    assert_eq!(
+        projectile.formula_text(),
+        "y(t) = 10.00 + 19.62 · t - 4.91 · t²"
+    );
+}
+
+#[test]
+fn test_m3_gravity_presets() {
+    use kinema_domain::motion::GravityPreset;
+
+    let presets = GravityPreset::all();
+    assert_eq!(presets.len(), 4);
+    assert_eq!(presets[0].name, "Earth");
+    assert_eq!(presets[1].name, "Moon");
+    assert_eq!(presets[1].g, 1.62);
+}
