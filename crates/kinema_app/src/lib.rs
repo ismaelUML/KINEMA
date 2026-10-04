@@ -1,9 +1,9 @@
 //! Application Layer / Use Case Orchestration.
 
 use kinema_domain::{
-    analyze_meeting, AtwoodMachine, BlockDynamics, Body, FreeBodyDiagram, GravityPreset,
-    MeetingOutcome, Motion, Motion1D, Mru, Mruv, Mvl, ParametricLaw, ParticleRope, Scene,
-    TablePulleySystem,
+    analyze_meeting, AtwoodMachine, BlockDynamics, Body, EntityKind, FreeBodyDiagram,
+    GravityPreset, MeetingOutcome, Motion, Motion1D, Mru, Mruv, Mvl, ParametricLaw, ParticleRope,
+    Scene, TablePulleySystem,
 };
 use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
 
@@ -338,41 +338,57 @@ fn resolve_scenario(name: &str) -> Option<Scene> {
 
 fn build_two_cars_scenario() -> Scene {
     let mut scene = Scene::new("Two cars meeting");
-    scene.add_body(Body::new("car_a", "Car A (15 m/s)", Mru::new(0.0, 15.0)));
-    scene.add_body(Body::new(
-        "car_b",
-        "Car B (-10 m/s)",
-        Mru::new(100.0, -10.0),
-    ));
+    scene.add_body(
+        Body::new("car_a", "Car A (15 m/s)", Mru::new(0.0, 15.0))
+            .with_kind(EntityKind::Vehicle { lane: 0 }),
+    );
+    scene.add_body(
+        Body::new("car_b", "Car B (-10 m/s)", Mru::new(100.0, -10.0))
+            .with_kind(EntityKind::Vehicle { lane: 1 }),
+    );
     scene
 }
 
 fn build_two_cars_mruv_scenario() -> Scene {
     let mut scene = Scene::new("Two cars meeting (MRU vs MRUV)");
-    scene.add_body(Body::new(
-        "car_a",
-        "Car A (MRU 15 m/s)",
-        Mru::new(0.0, 15.0),
-    ));
-    scene.add_body(Body::new(
-        "car_b",
-        "Car B (MRUV v0=-10, a=+2)",
-        Mruv::new(100.0, -10.0, 2.0),
-    ));
+    scene.add_body(
+        Body::new("car_a", "Car A (MRU 15 m/s)", Mru::new(0.0, 15.0))
+            .with_kind(EntityKind::Vehicle { lane: 0 }),
+    );
+    // Canonical M2 Two-Roots Problem: Car B has constant acceleration a = +2 m/s².
+    // It decelerates to v=0 at t=5s (first meeting) and accelerates rightwards to second meeting at t=20s.
+    scene.add_body(
+        Body::new(
+            "car_b",
+            "Car B (MRUV v0=-10, a=+2)",
+            Mruv::new(100.0, -10.0, 2.0),
+        )
+        .with_kind(EntityKind::Vehicle { lane: 1 }),
+    );
     scene
 }
 
 fn build_parallel_scenario() -> Scene {
     let mut scene = Scene::new("Parallel cars never meeting");
-    scene.add_body(Body::new("car_a", "Car A", Mru::new(0.0, 20.0)));
-    scene.add_body(Body::new("car_b", "Car B", Mru::new(50.0, 20.0)));
+    scene.add_body(
+        Body::new("car_a", "Car A", Mru::new(0.0, 20.0)).with_kind(EntityKind::Vehicle { lane: 0 }),
+    );
+    scene.add_body(
+        Body::new("car_b", "Car B", Mru::new(50.0, 20.0))
+            .with_kind(EntityKind::Vehicle { lane: 1 }),
+    );
     scene
 }
 
 fn build_coinciding_scenario() -> Scene {
     let mut scene = Scene::new("Coinciding cars");
-    scene.add_body(Body::new("car_a", "Car A", Mru::new(25.0, 10.0)));
-    scene.add_body(Body::new("car_b", "Car B", Mru::new(25.0, 10.0)));
+    // Assigning separate lanes prevents Car B from completely occluding Car A in 2D space.
+    scene.add_body(
+        Body::new("car_a", "Car A", Mru::new(25.0, 10.0)).with_kind(EntityKind::Vehicle { lane: 0 }),
+    );
+    scene.add_body(
+        Body::new("car_b", "Car B", Mru::new(25.0, 10.0)).with_kind(EntityKind::Vehicle { lane: 1 }),
+    );
     scene
 }
 
@@ -380,11 +396,16 @@ fn build_20m_free_fall_scenario() -> Scene {
     let mut scene = Scene::new("Free fall 20m drop (Earth)");
     let g = GravityPreset::EARTH_STANDARD;
     scene.gravity = g;
-    scene.add_body(Body::new(
-        "ball",
-        "Dropping Ball (20m)",
-        Mvl::new(20.0, 0.0, g),
-    ));
+    scene.add_body(
+        Body::new(
+            "ball",
+            "Dropping Ball (20m)",
+            Mvl::new(20.0, 0.0, g).with_ground_stop(true),
+        )
+        .with_kind(EntityKind::FreeFall {
+            initial_height: 20.0,
+        }),
+    );
     scene
 }
 
@@ -392,16 +413,22 @@ fn build_feather_hammer_scenario() -> Scene {
     let mut scene = Scene::new("Feather and Hammer (Moon)");
     let g = GravityPreset::MOON;
     scene.gravity = g;
-    scene.add_body(Body::new(
-        "hammer",
-        "Geological Hammer",
-        Mvl::new(1.62, 0.0, g),
-    ));
-    scene.add_body(Body::new(
-        "feather",
-        "Falcon Feather",
-        Mvl::new(1.62, 0.0, g),
-    ));
+    scene.add_body(
+        Body::new(
+            "hammer",
+            "Geological Hammer",
+            Mvl::new(1.62, 0.0, g).with_ground_stop(true),
+        )
+        .with_kind(EntityKind::FeatherAndHammer { is_feather: false }),
+    );
+    scene.add_body(
+        Body::new(
+            "feather",
+            "Falcon Feather",
+            Mvl::new(1.62, 0.0, g).with_ground_stop(true),
+        )
+        .with_kind(EntityKind::FeatherAndHammer { is_feather: true }),
+    );
     scene
 }
 
@@ -409,11 +436,14 @@ fn build_vertical_projectile_scenario() -> Scene {
     let mut scene = Scene::new("Vertical projectile launch (Earth)");
     let g = GravityPreset::EARTH_STANDARD;
     scene.gravity = g;
-    scene.add_body(Body::new(
-        "rock",
-        "Launched Rock (v0=20 m/s)",
-        Mvl::new(0.0, 20.0, g),
-    ));
+    scene.add_body(
+        Body::new(
+            "rock",
+            "Launched Rock (v0=20 m/s)",
+            Mvl::new(0.0, 20.0, g).with_ground_stop(true),
+        )
+        .with_kind(EntityKind::VerticalProjectile { v0: 20.0 }),
+    );
     scene
 }
 
@@ -422,11 +452,16 @@ fn build_block_friction_scenario() -> Scene {
     let g = GravityPreset::EARTH_STANDARD;
     scene.gravity = g;
     let block = BlockDynamics::horizontal(5.0, 0.5, 0.3, 20.0).with_gravity(g);
-    scene.add_body(Body::new(
-        "block",
-        "Block (5kg, μs=0.5, μk=0.3, F=20N)",
-        block,
-    ));
+    scene.add_body(
+        Body::new("block", "Block (5kg, μs=0.5, μk=0.3, F=20N)", block).with_kind(
+            EntityKind::FrictionBlock {
+                mass: 5.0,
+                mu_s: 0.5,
+                mu_k: 0.3,
+                f_app: 20.0,
+            },
+        ),
+    );
     scene
 }
 
@@ -436,11 +471,14 @@ fn build_incline_slide_scenario() -> Scene {
     scene.gravity = g;
     let theta = 30.0_f64.to_radians();
     let block = BlockDynamics::new(2.0, theta, 0.6, 0.4).with_gravity(g);
-    scene.add_body(Body::new(
-        "slider",
-        "Block on 30° Incline (μs=0.6, μk=0.4)",
-        block,
-    ));
+    scene.add_body(
+        Body::new("slider", "Block on 30° Incline (μs=0.6, μk=0.4)", block).with_kind(
+            EntityKind::InclineBlock {
+                angle_rad: theta,
+                incline_length: 50.0,
+            },
+        ),
+    );
     scene
 }
 
@@ -449,7 +487,16 @@ fn build_heavy_crate_scenario() -> Scene {
     let g = GravityPreset::EARTH_STANDARD;
     scene.gravity = g;
     let crate_body = BlockDynamics::horizontal(50.0, 0.4, 0.25, 250.0).with_gravity(g);
-    scene.add_body(Body::new("crate", "Heavy Crate (50kg, F=250N)", crate_body));
+    scene.add_body(
+        Body::new("crate", "Heavy Crate (50kg, F=250N)", crate_body).with_kind(
+            EntityKind::FrictionBlock {
+                mass: 50.0,
+                mu_s: 0.4,
+                mu_k: 0.25,
+                f_app: 250.0,
+            },
+        ),
+    );
     scene
 }
 
@@ -460,11 +507,14 @@ fn build_atwood_scenario() -> Scene {
     let atwood = AtwoodMachine::new(2.0, 3.0)
         .expect("valid masses")
         .with_gravity(g);
-    scene.add_body(Body::new(
-        "atwood",
-        "Atwood Machine (m1=2kg, m2=3kg)",
-        atwood,
-    ));
+    scene.add_body(
+        Body::new("atwood", "Atwood Machine (m1=2kg, m2=3kg)", atwood).with_kind(
+            EntityKind::AtwoodSystem {
+                m1: 2.0,
+                m2: 3.0,
+            },
+        ),
+    );
     scene
 }
 
@@ -475,11 +525,17 @@ fn build_table_pulley_scenario() -> Scene {
     let system = TablePulleySystem::new(10.0, 6.0, 0.5, 0.3)
         .expect("valid system")
         .with_gravity(g);
-    scene.add_body(Body::new(
-        "table_pulley",
-        "Table Pulley (m1=10kg, m2=6kg, μs=0.5, μk=0.3)",
-        system,
-    ));
+    scene.add_body(
+        Body::new(
+            "table_pulley",
+            "Table Pulley (m1=10kg, m2=6kg, μs=0.5, μk=0.3)",
+            system,
+        )
+        .with_kind(EntityKind::TablePulleySystem {
+            m1: 10.0,
+            m2: 6.0,
+        }),
+    );
     scene
 }
 
