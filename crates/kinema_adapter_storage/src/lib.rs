@@ -381,9 +381,7 @@ fn apply_rope_kv(draft: &mut RopeDraft, key: &str, val: &str) -> Result<(), Stri
                 .parse()
                 .map_err(|e| format!("Invalid node count: {}", e))?
         }
-        "passes" => {
-            draft.passes = val.parse().map_err(|e| format!("Invalid passes: {}", e))?
-        }
+        "passes" => draft.passes = val.parse().map_err(|e| format!("Invalid passes: {}", e))?,
         "p0_x" => draft.p0[0] = parse_finite_f64(val, "p0_x")?,
         "p0_y" => draft.p0[1] = parse_finite_f64(val, "p0_y")?,
         "p1_x" => draft.p1[0] = parse_finite_f64(val, "p1_x")?,

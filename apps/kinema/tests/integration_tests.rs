@@ -284,3 +284,109 @@ fn test_m4_end_to_end_acceptance() {
     presenter.consume_snapshot(service.scene(), service.current_time());
     assert_eq!(presenter.model().fbd_views[0].friction_state, "KINETIC");
 }
+
+#[test]
+fn test_m5_end_to_end_acceptance() {
+    use kinema_domain::pulley::AtwoodMachine;
+    use kinema_domain::rope::ParticleRope;
+    use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
+
+    let empty = Scene::new("Empty");
+    let mut service = SimulationService::new(empty);
+    let mut presenter = UiPresenter::new();
+
+    // 1. Stage A: Atwood machine formula and simulated bound
+    service
+        .load_scenario("atwood_machine")
+        .expect("Atwood preset must load");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    let initial_pulleys = &presenter.model().pulley_views;
+    assert_eq!(initial_pulleys.len(), 1);
+    let atwood_view = &initial_pulleys[0];
+    assert_eq!(atwood_view.system_type, "Atwood Machine");
+
+    // a = (3 - 2) * 9.81 / 5 = 1.962 m/s²
+    // T = 2 * 2 * 3 * 9.81 / 5 = 23.544 N
+    let expected_a = 1.962;
+    let expected_t = 23.544;
+    assert!((atwood_view.acceleration - expected_a).abs() < 1e-4);
+    assert!((atwood_view.tension - expected_t).abs() < 1e-4);
+
+    // Integrator bound for Atwood: 480 steps at 240 Hz (2.0s)
+    let atwood = AtwoodMachine::new(2.0, 3.0).unwrap().with_gravity(9.81);
+    let mut num_s = 0.0;
+    let mut num_v = 0.0;
+    for _ in 0..480 {
+        let (ns, nv, _) = atwood.step_euler(num_s, num_v, 1.0 / 240.0);
+        num_s = ns;
+        num_v = nv;
+    }
+    assert!((num_v - expected_a * 2.0).abs() < 1e-9);
+    assert!((num_s - 0.5 * expected_a * 4.0).abs() < 0.01);
+
+    // 2. Stage A: Table pulley static-to-kinetic threshold
+    service
+        .load_scenario("table_pulley_friction")
+        .expect("Table pulley preset must load");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let table_view = &presenter.model().pulley_views[0];
+    assert_eq!(table_view.system_type, "Table Pulley");
+    // Initially m1=10, m2=6 => m2*g = 58.86 N > 49.05 N (Kinetic)
+    assert!((table_view.acceleration - 1.839375).abs() < 1e-3);
+    assert!((table_view.tension - 47.82375).abs() < 1e-3);
+
+    // Edit hanging mass down to m2 = 1 kg (m2*g = 9.81 N <= 49.05 N => Transitions to Static!)
+    service
+        .edit_parameter("table_pulley", "m2", 1.0)
+        .expect("edit m2 to 1kg");
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let static_view = &presenter.model().pulley_views[0];
+    assert_eq!(static_view.acceleration, 0.0);
+    assert!((static_view.tension - 9.81).abs() < 1e-3);
+
+    // 3. Stage B: Particle-chain rope (24 nodes, 12 relaxation passes)
+    service
+        .load_scenario("hanging_catenary_rope")
+        .expect("Catenary preset must load");
+
+    // Advance 120 frames (2.0s wall clock, 480 sub-steps)
+    for _ in 0..120 {
+        service.step_forward();
+    }
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    let rope_view = &presenter.model().rope_views[0];
+    assert_eq!(rope_view.node_count, 24);
+    assert_eq!(rope_view.segments.len(), 23);
+
+    // Stage B Acceptance 1: Stretch stays strictly under 1%
+    assert!(
+        rope_view.stretch_percent < 1.0,
+        "Stretch must stay under 1%, got {:.3}%",
+        rope_view.stretch_percent
+    );
+
+    // Stage B Acceptance 2: 10 minutes (144,000 steps) stability & no NaN
+    let mut rope = ParticleRope::new_catenary([0.0, 4.0], [2.0, 4.0], 3.0, 1.5).unwrap();
+    rope.set_pinned(23, true).unwrap();
+    for _ in 0..144_000 {
+        rope.step(1.0 / 240.0);
+    }
+    for node in &rope.nodes {
+        assert!(node.pos[0].is_finite());
+        assert!(node.pos[1].is_finite());
+    }
+    assert!(rope.stretch_ratio() < 0.01);
+
+    // 4. Persistence roundtrip with KinFileStorage
+    let storage = KinFileStorage::new();
+    let serialized = storage.serialize_scene(service.scene());
+    let reloaded = storage.parse_str(&serialized).expect("roundtrip parse");
+    assert_eq!(reloaded.ropes.len(), 1);
+    assert_eq!(reloaded.ropes[0].nodes.len(), 24);
+    assert_eq!(reloaded.ropes[0].relaxation_passes, 12);
+
+    // 5. Bounded Undo/Redo
+    assert!(service.undo());
+    assert!(service.redo());
+}

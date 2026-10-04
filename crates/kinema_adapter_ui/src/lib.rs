@@ -451,11 +451,7 @@ fn make_atwood_view(body: &Body, a: &AtwoodMachine, current_time: f64) -> UiPull
     }
 }
 
-fn make_table_pulley_view(
-    body: &Body,
-    p: &TablePulleySystem,
-    current_time: f64,
-) -> UiPulleyView {
+fn make_table_pulley_view(body: &Body, p: &TablePulleySystem, current_time: f64) -> UiPulleyView {
     UiPulleyView {
         body_id: body.id.clone(),
         system_type: "Table Pulley".to_string(),
@@ -475,7 +471,11 @@ fn make_table_pulley_view(
 }
 
 fn build_rope_views(ropes: &[ParticleRope]) -> Vec<UiRopeView> {
-    ropes.iter().enumerate().map(make_single_rope_view).collect()
+    ropes
+        .iter()
+        .enumerate()
+        .map(make_single_rope_view)
+        .collect()
 }
 
 fn make_single_rope_view((idx, rope): (usize, &ParticleRope)) -> UiRopeView {
@@ -530,4 +530,3 @@ pub fn tension_to_color_hex(ratio: f64) -> String {
     };
     format!("#{:02X}{:02X}{:02X}", red as u8, green as u8, blue as u8)
 }
-

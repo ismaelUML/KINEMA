@@ -47,7 +47,12 @@ impl ParticleRope {
     pub const DEFAULT_RELAXATION_PASSES: usize = 12;
 
     /// Creates a suspended rope between two coordinates (p0 and p1) with default 24 nodes.
-    pub fn new_catenary(p0: [f64; 2], p1: [f64; 2], length: f64, total_mass: f64) -> Result<Self, &'static str> {
+    pub fn new_catenary(
+        p0: [f64; 2],
+        p1: [f64; 2],
+        length: f64,
+        total_mass: f64,
+    ) -> Result<Self, &'static str> {
         Self::with_node_count(p0, p1, length, total_mass, Self::DEFAULT_NODE_COUNT)
     }
 

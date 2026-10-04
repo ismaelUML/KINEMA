@@ -367,4 +367,3 @@ fn test_m5_rope_surface_friction_scenario() {
     assert_eq!(ropes[0].surface_y, Some(0.0));
     assert_eq!(ropes[0].friction_mu, 0.4);
 }
-

@@ -328,9 +328,7 @@ fn resolve_scenario(name: &str) -> Option<Scene> {
         "table_pulley_friction" | "Table pulley with friction" => {
             Some(build_table_pulley_scenario())
         }
-        "hanging_catenary_rope" | "Hanging catenary rope" => {
-            Some(build_catenary_rope_scenario())
-        }
+        "hanging_catenary_rope" | "Hanging catenary rope" => Some(build_catenary_rope_scenario()),
         "rope_surface_friction" | "Rope on surface with friction" => {
             Some(build_rope_friction_scenario())
         }
@@ -507,4 +505,3 @@ fn build_rope_friction_scenario() -> Scene {
     scene.add_rope(rope);
     scene
 }
-

@@ -221,7 +221,10 @@ v0 = 0.0
     let storage = KinFileStorage::new();
     let scene = storage.parse_str(raw).expect("parse atwood");
     assert_eq!(scene.bodies.len(), 1);
-    let tension = scene.bodies[0].motion.pulley_tension().expect("has tension");
+    let tension = scene.bodies[0]
+        .motion
+        .pulley_tension()
+        .expect("has tension");
     assert!((tension - 23.544).abs() < 1e-4);
 
     let serialized = storage.serialize_scene(&scene);
@@ -250,7 +253,10 @@ v0 = 0.0
     let storage = KinFileStorage::new();
     let scene = storage.parse_str(raw).expect("parse table pulley");
     assert_eq!(scene.bodies.len(), 1);
-    let tension = scene.bodies[0].motion.pulley_tension().expect("has tension");
+    let tension = scene.bodies[0]
+        .motion
+        .pulley_tension()
+        .expect("has tension");
     assert!((tension - 47.82375).abs() < 1e-4);
 
     let serialized = storage.serialize_scene(&scene);
@@ -295,4 +301,3 @@ friction_mu = 0.2
     assert_eq!(roundtripped.ropes[0].nodes.len(), 24);
     assert!(roundtripped.ropes[0].nodes[23].pinned);
 }
-

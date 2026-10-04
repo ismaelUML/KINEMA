@@ -4,42 +4,47 @@ use kinema_adapter_storage::KinFileStorage;
 use kinema_adapter_ui::{GraphKind, UiPresenter, UiViewModel};
 use kinema_app::SimulationService;
 use kinema_domain::Scene;
-use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl, SnapshotSink};
+use kinema_ports::{ScenarioCatalog, SimulationControl, SnapshotSink};
 
 fn main() {
     println!("=======================================================");
-    println!(" K I N E M A  --  Interactive Physics Workbench (M4)   ");
+    println!(" K I N E M A  --  Interactive Physics Workbench (M5)   ");
     println!("=======================================================");
 
-    // Wire application and load canonical M4 preset (Block with friction threshold)
+    // Wire application and load canonical M5 Stage A preset (Atwood machine)
     let mut service = SimulationService::new(Scene::default());
     service
-        .load_scenario("block_friction_threshold")
-        .expect("Failed to load M4 preset");
+        .load_scenario("atwood_machine")
+        .expect("Failed to load Atwood preset");
 
     let _storage = KinFileStorage::new();
     let mut presenter = UiPresenter::new();
 
-    // Snapshot at t=0 (Below static threshold: F_app = 20 N <= 24.525 N)
+    // Snapshot at t=0
     presenter.consume_snapshot(service.scene(), service.current_time());
     print_view_model(presenter.model());
 
-    // Instant edit applied force to pass static threshold: F_app = 30 N > 24.525 N
-    println!("\n--- Passing static friction threshold (F_app: 20 N -> 30 N) ---");
-    service
-        .edit_parameter("block", "f_app", 30.0)
-        .expect("Parameter edit failed");
-    presenter.consume_snapshot(service.scene(), service.current_time());
-    print_view_model(presenter.model());
-
-    // Advance simulation forward: t = 2.0 s under constant kinetic acceleration
-    service.seek(2.0);
+    // Advance Atwood machine 1.0 s
+    println!("\n--- Advancing Atwood Machine to t = 1.0 s ---");
+    service.seek(1.0);
     presenter.set_graph_kind(GraphKind::VelocityTime);
     presenter.consume_snapshot(service.scene(), service.current_time());
-    println!("\n--- Advanced to t = 2.0 s ---");
     print_view_model(presenter.model());
 
-    println!("\nKINEMA M4 (Dynamics & Friction) verified successfully.");
+    // Load M5 Stage B preset (Hanging Catenary Rope with Verlet integration)
+    println!("\n--- Loading M5 Stage B: Hanging Catenary Rope ---");
+    service
+        .load_scenario("hanging_catenary_rope")
+        .expect("Failed to load catenary preset");
+
+    // Advance 60 frames (1.0 s)
+    for _ in 0..60 {
+        service.step_forward();
+    }
+    presenter.consume_snapshot(service.scene(), service.current_time());
+    print_view_model(presenter.model());
+
+    println!("\nKINEMA M5 (Rope and Pulleys) verified successfully.");
 }
 
 fn print_markers(model: &UiViewModel) {
@@ -69,12 +74,47 @@ fn print_fbd(model: &UiViewModel) {
     }
 }
 
+fn print_pulleys(model: &UiViewModel) {
+    for pulley in &model.pulley_views {
+        println!(
+            " - Pulley [{}]: {} => T = {:.2} N, a = {:.3} m/s², m1_pos = {:.2} m, m2_pos = {:.2} m",
+            pulley.body_id,
+            pulley.system_type,
+            pulley.tension,
+            pulley.acceleration,
+            pulley.mass1_pos,
+            pulley.mass2_pos
+        );
+    }
+}
+
+fn print_ropes(model: &UiViewModel) {
+    for rope in &model.rope_views {
+        println!(
+            " - Rope [{}]: {} nodes, L = {:.2} m, stretch = {:.3}%, {} segments",
+            rope.rope_id,
+            rope.node_count,
+            rope.total_length,
+            rope.stretch_percent,
+            rope.segments.len()
+        );
+        if let Some(first_seg) = rope.segments.first() {
+            println!(
+                "     -> First segment tension: {:.2} N, color: {}",
+                first_seg.tension, first_seg.color_hex
+            );
+        }
+    }
+}
+
 fn print_view_model(model: &UiViewModel) {
     println!("Title:     {}", model.window_title);
     println!("Status:    {}", model.status_message);
     println!("Inspector: {}", model.meeting_diagnosis);
     print_markers(model);
     print_fbd(model);
+    print_pulleys(model);
+    print_ropes(model);
     for body in &model.bodies {
         println!(
             " - [{}]: {} => pos = {:.2} m, v = {:.2} m/s, a = {:.2} m/s²",

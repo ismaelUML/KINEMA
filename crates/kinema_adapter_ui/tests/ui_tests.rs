@@ -225,4 +225,3 @@ fn test_ui_presenter_m5_rope_views_and_color_ramp() {
         assert!(seg.tension_ratio >= 0.0 && seg.tension_ratio <= 1.0);
     }
 }
-
