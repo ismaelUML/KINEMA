@@ -202,3 +202,97 @@ fn test_reject_negative_friction() {
     let err = storage.parse_str(raw).unwrap_err();
     assert!(err.contains("negative"));
 }
+
+#[test]
+fn test_parse_and_roundtrip_atwood_scene() {
+    let raw = r#"
+[scene]
+name = "Atwood Machine Demo"
+gravity = 9.81
+
+[body.atwood_1]
+motion = "atwood"
+m1 = 2.0
+m2 = 3.0
+gravity = 9.81
+s0 = 0.0
+v0 = 0.0
+"#;
+    let storage = KinFileStorage::new();
+    let scene = storage.parse_str(raw).expect("parse atwood");
+    assert_eq!(scene.bodies.len(), 1);
+    let tension = scene.bodies[0].motion.pulley_tension().expect("has tension");
+    assert!((tension - 23.544).abs() < 1e-4);
+
+    let serialized = storage.serialize_scene(&scene);
+    let roundtripped = storage.parse_str(&serialized).expect("roundtrip parse");
+    assert_eq!(roundtripped.bodies.len(), 1);
+    assert!((roundtripped.bodies[0].motion.pulley_tension().unwrap() - 23.544).abs() < 1e-4);
+}
+
+#[test]
+fn test_parse_and_roundtrip_table_pulley_scene() {
+    let raw = r#"
+[scene]
+name = "Table Pulley Demo"
+gravity = 9.81
+
+[body.pulley_1]
+motion = "table_pulley"
+m1 = 10.0
+m2 = 6.0
+mu_s = 0.5
+mu_k = 0.3
+gravity = 9.81
+s0 = 0.0
+v0 = 0.0
+"#;
+    let storage = KinFileStorage::new();
+    let scene = storage.parse_str(raw).expect("parse table pulley");
+    assert_eq!(scene.bodies.len(), 1);
+    let tension = scene.bodies[0].motion.pulley_tension().expect("has tension");
+    assert!((tension - 47.82375).abs() < 1e-4);
+
+    let serialized = storage.serialize_scene(&scene);
+    let roundtripped = storage.parse_str(&serialized).expect("roundtrip parse");
+    assert_eq!(roundtripped.bodies.len(), 1);
+    assert!((roundtripped.bodies[0].motion.pulley_tension().unwrap() - 47.82375).abs() < 1e-4);
+}
+
+#[test]
+fn test_parse_and_roundtrip_rope_scene() {
+    let raw = r#"
+[scene]
+name = "Hanging Catenary Rope"
+gravity = 9.80665
+
+[rope.rope_1]
+length = 3.0
+mass = 1.5
+node_count = 24
+passes = 12
+p0_x = 0.0
+p0_y = 4.0
+p1_x = 2.5
+p1_y = 4.0
+p1_pinned = true
+surface_y = 0.0
+friction_mu = 0.2
+"#;
+    let storage = KinFileStorage::new();
+    let scene = storage.parse_str(raw).expect("parse rope");
+    assert_eq!(scene.ropes.len(), 1);
+    let rope = &scene.ropes[0];
+    assert_eq!(rope.nodes.len(), 24);
+    assert_eq!(rope.relaxation_passes, 12);
+    assert!(rope.nodes[23].pinned);
+    assert_eq!(rope.surface_y, Some(0.0));
+    assert_eq!(rope.friction_mu, 0.2);
+
+    let serialized = storage.serialize_scene(&scene);
+    let roundtripped = storage.parse_str(&serialized).expect("roundtrip parse");
+    assert_eq!(roundtripped.ropes.len(), 1);
+    assert_eq!(roundtripped.ropes[0].nodes.len(), 24);
+    assert!(roundtripped.ropes[0].nodes[23].pinned);
+}
+

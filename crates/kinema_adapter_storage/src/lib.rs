@@ -1,5 +1,7 @@
 use kinema_domain::dynamics::BlockDynamics;
 use kinema_domain::motion::{Motion, Mru, Mruv, Mvl};
+use kinema_domain::pulley::{AtwoodMachine, TablePulleySystem};
+use kinema_domain::rope::ParticleRope;
 use kinema_domain::scene::{Body, Scene};
 use kinema_ports::SceneRepository;
 use std::fs;
@@ -20,6 +22,8 @@ struct BodyDraft {
     a: f64,
     g: f64,
     mass: f64,
+    m1: f64,
+    m2: f64,
     theta: f64,
     mu_s: f64,
     mu_k: f64,
@@ -36,6 +40,8 @@ impl BodyDraft {
             a: 0.0,
             g: 9.80665,
             mass: 1.0,
+            m1: 1.0,
+            m2: 1.0,
             theta: 0.0,
             mu_s: 0.5,
             mu_k: 0.3,
@@ -43,12 +49,22 @@ impl BodyDraft {
         }
     }
 
-    fn into_body(self) -> Body {
+    fn into_body(self) -> Result<Body, String> {
         let motion: Motion = match self.motion_type.as_str() {
             "dynamics" => BlockDynamics::new(self.mass, self.theta, self.mu_s, self.mu_k)
                 .with_applied_force(self.f_app)
                 .with_initial_state(self.x0, self.v)
                 .with_gravity(self.g)
+                .into(),
+            "atwood" => AtwoodMachine::new(self.m1, self.m2)
+                .map_err(|e| format!("Invalid Atwood machine: {}", e))?
+                .with_gravity(self.g)
+                .with_initial_state(self.x0, self.v)
+                .into(),
+            "table_pulley" => TablePulleySystem::new(self.m1, self.m2, self.mu_s, self.mu_k)
+                .map_err(|e| format!("Invalid table pulley: {}", e))?
+                .with_gravity(self.g)
+                .with_initial_state(self.x0, self.v)
                 .into(),
             "mvl" => Mvl::new(self.x0, self.v, self.g).into(),
             "mruv" => Mruv::new(self.x0, self.v, self.a).into(),
@@ -60,7 +76,58 @@ impl BodyDraft {
                 }
             }
         };
-        Body::new(&self.id, &self.id, motion)
+        Ok(Body::new(&self.id, &self.id, motion))
+    }
+}
+
+struct RopeDraft {
+    length: f64,
+    mass: f64,
+    node_count: usize,
+    passes: usize,
+    p0: [f64; 2],
+    p1: [f64; 2],
+    p1_pinned: bool,
+    surface_y: Option<f64>,
+    friction_mu: f64,
+}
+
+impl Default for RopeDraft {
+    fn default() -> Self {
+        Self {
+            length: 2.4,
+            mass: 1.2,
+            node_count: ParticleRope::DEFAULT_NODE_COUNT,
+            passes: ParticleRope::DEFAULT_RELAXATION_PASSES,
+            p0: [0.0, 2.0],
+            p1: [2.0, 2.0],
+            p1_pinned: false,
+            surface_y: None,
+            friction_mu: 0.0,
+        }
+    }
+}
+
+impl RopeDraft {
+    fn into_rope(self) -> Result<ParticleRope, String> {
+        let mut rope = ParticleRope::with_node_count(
+            self.p0,
+            self.p1,
+            self.length,
+            self.mass,
+            self.node_count,
+        )
+        .map_err(|e| format!("Invalid rope parameters: {}", e))?;
+
+        rope.relaxation_passes = self.passes;
+        if self.p1_pinned {
+            let last_idx = rope.nodes.len().saturating_sub(1);
+            let _ = rope.set_pinned(last_idx, true);
+        }
+        if let Some(sy) = self.surface_y {
+            rope = rope.with_surface(sy, self.friction_mu);
+        }
+        Ok(rope)
     }
 }
 
@@ -97,7 +164,8 @@ impl KinFileStorage {
 
     pub fn parse_str(&self, content: &str) -> Result<Scene, String> {
         let mut scene = Scene::default();
-        let mut current_draft: Option<BodyDraft> = None;
+        let mut current_body: Option<BodyDraft> = None;
+        let mut current_rope: Option<RopeDraft> = None;
 
         for raw_line in content.lines() {
             let line = raw_line.split('#').next().unwrap_or("").trim();
@@ -107,33 +175,32 @@ impl KinFileStorage {
 
             if line.starts_with('[') && line.ends_with(']') {
                 let section = line[1..line.len() - 1].trim();
-                if let Some(draft) = current_draft.take() {
-                    commit_body_draft(&mut scene, draft)?;
-                }
-                if let Some(stripped) = section.strip_prefix("body.") {
-                    let id = stripped.trim();
-                    if id.is_empty() {
+                commit_pending_drafts(&mut scene, &mut current_body, &mut current_rope)?;
+
+                if let Some(id) = section.strip_prefix("body.") {
+                    let trimmed = id.trim();
+                    if trimmed.is_empty() {
                         return Err("Body ID cannot be empty".to_string());
                     }
-                    current_draft = Some(BodyDraft::new(id));
+                    current_body = Some(BodyDraft::new(trimmed));
+                } else if section.starts_with("rope.") {
+                    current_rope = Some(RopeDraft::default());
                 }
                 continue;
             }
 
             if let Some((key, val)) = line.split_once('=') {
-                dispatch_kv_pair(
+                dispatch_kv(
                     &mut scene,
-                    &mut current_draft,
+                    &mut current_body,
+                    &mut current_rope,
                     key.trim(),
                     val.trim().trim_matches('"'),
                 )?;
             }
         }
 
-        if let Some(draft) = current_draft {
-            commit_body_draft(&mut scene, draft)?;
-        }
-
+        commit_pending_drafts(&mut scene, &mut current_body, &mut current_rope)?;
         Ok(scene)
     }
 
@@ -148,6 +215,10 @@ impl KinFileStorage {
             serialize_body(&mut out, body);
         }
 
+        for (idx, rope) in scene.ropes.iter().enumerate() {
+            serialize_rope(&mut out, idx, rope);
+        }
+
         out
     }
 }
@@ -160,6 +231,8 @@ fn serialize_body(out: &mut String, body: &Body) {
         Motion::Mruv(m) => serialize_mruv(out, m),
         Motion::Mvl(m) => serialize_mvl(out, m),
         Motion::Dynamics(d) => serialize_dynamics(out, d),
+        Motion::Atwood(a) => serialize_atwood(out, a),
+        Motion::TablePulley(p) => serialize_table_pulley(out, p),
     }
 }
 
@@ -195,25 +268,77 @@ fn serialize_dynamics(out: &mut String, d: &BlockDynamics) {
     out.push_str(&format!("v0 = {}\n\n", d.v0));
 }
 
-fn commit_body_draft(scene: &mut Scene, draft: BodyDraft) -> Result<(), String> {
-    if scene.bodies.len() >= MAX_BODIES_COUNT {
-        return Err("Scene exceeds maximum allowed bodies (256)".to_string());
+fn serialize_atwood(out: &mut String, a: &AtwoodMachine) {
+    out.push_str("motion = \"atwood\"\n");
+    out.push_str(&format!("m1 = {}\n", a.m1));
+    out.push_str(&format!("m2 = {}\n", a.m2));
+    out.push_str(&format!("gravity = {}\n", a.g));
+    out.push_str(&format!("s0 = {}\n", a.s0));
+    out.push_str(&format!("v0 = {}\n\n", a.v0));
+}
+
+fn serialize_table_pulley(out: &mut String, p: &TablePulleySystem) {
+    out.push_str("motion = \"table_pulley\"\n");
+    out.push_str(&format!("m1 = {}\n", p.m1));
+    out.push_str(&format!("m2 = {}\n", p.m2));
+    out.push_str(&format!("mu_s = {}\n", p.mu_s));
+    out.push_str(&format!("mu_k = {}\n", p.mu_k));
+    out.push_str(&format!("gravity = {}\n", p.g));
+    out.push_str(&format!("s0 = {}\n", p.s0));
+    out.push_str(&format!("v0 = {}\n\n", p.v0));
+}
+
+fn serialize_rope(out: &mut String, idx: usize, rope: &ParticleRope) {
+    out.push_str(&format!("[rope.rope_{}]\n", idx + 1));
+    out.push_str(&format!("length = {}\n", rope.total_length));
+    out.push_str(&format!("mass = {}\n", rope.total_mass));
+    out.push_str(&format!("node_count = {}\n", rope.nodes.len()));
+    out.push_str(&format!("passes = {}\n", rope.relaxation_passes));
+    if let (Some(first), Some(last)) = (rope.nodes.first(), rope.nodes.last()) {
+        out.push_str(&format!("p0_x = {}\n", first.pos[0]));
+        out.push_str(&format!("p0_y = {}\n", first.pos[1]));
+        out.push_str(&format!("p1_x = {}\n", last.pos[0]));
+        out.push_str(&format!("p1_y = {}\n", last.pos[1]));
+        out.push_str(&format!("p1_pinned = {}\n", last.pinned));
     }
-    if scene.bodies.iter().any(|b| b.id == draft.id) {
-        return Err(format!("Duplicate body ID '{}'", draft.id));
+    if let Some(sy) = rope.surface_y {
+        out.push_str(&format!("surface_y = {}\n", sy));
+        out.push_str(&format!("friction_mu = {}\n", rope.friction_mu));
     }
-    scene.add_body(draft.into_body());
+    out.push('\n');
+}
+
+fn commit_pending_drafts(
+    scene: &mut Scene,
+    body_draft: &mut Option<BodyDraft>,
+    rope_draft: &mut Option<RopeDraft>,
+) -> Result<(), String> {
+    if let Some(draft) = body_draft.take() {
+        if scene.bodies.len() >= MAX_BODIES_COUNT {
+            return Err("Scene exceeds maximum allowed bodies (256)".to_string());
+        }
+        if scene.bodies.iter().any(|b| b.id == draft.id) {
+            return Err(format!("Duplicate body ID '{}'", draft.id));
+        }
+        scene.add_body(draft.into_body()?);
+    }
+    if let Some(draft) = rope_draft.take() {
+        scene.add_rope(draft.into_rope()?);
+    }
     Ok(())
 }
 
-fn dispatch_kv_pair(
+fn dispatch_kv(
     scene: &mut Scene,
-    draft: &mut Option<BodyDraft>,
+    body_draft: &mut Option<BodyDraft>,
+    rope_draft: &mut Option<RopeDraft>,
     key: &str,
     val: &str,
 ) -> Result<(), String> {
-    if draft.is_some() {
-        apply_body_kv(draft.as_mut().unwrap(), key, val)
+    if let Some(draft) = body_draft.as_mut() {
+        apply_body_kv(draft, key, val)
+    } else if let Some(draft) = rope_draft.as_mut() {
+        apply_rope_kv(draft, key, val)
     } else {
         apply_scene_kv(scene, key, val)
     }
@@ -231,11 +356,13 @@ fn apply_scene_kv(scene: &mut Scene, key: &str, val: &str) -> Result<(), String>
 fn apply_body_kv(draft: &mut BodyDraft, key: &str, val: &str) -> Result<(), String> {
     match key {
         "motion" => draft.motion_type = val.to_string(),
-        "x0" | "y0" => draft.x0 = parse_finite_f64(val, key)?,
+        "x0" | "y0" | "s0" => draft.x0 = parse_finite_f64(val, key)?,
         "v" | "v0" => draft.v = parse_finite_f64(val, key)?,
         "a" => draft.a = parse_finite_f64(val, "a")?,
         "g" | "gravity" => draft.g = parse_non_negative_f64(val, "Gravity")?,
         "mass" | "m" => draft.mass = parse_positive_f64(val, "Mass")?,
+        "m1" => draft.m1 = parse_positive_f64(val, "m1")?,
+        "m2" => draft.m2 = parse_positive_f64(val, "m2")?,
         "theta" | "angle" => draft.theta = parse_non_negative_f64(val, "Angle")?,
         "mu_s" => draft.mu_s = parse_non_negative_f64(val, "mu_s")?,
         "mu_k" => draft.mu_k = parse_non_negative_f64(val, "mu_k")?,
@@ -245,24 +372,46 @@ fn apply_body_kv(draft: &mut BodyDraft, key: &str, val: &str) -> Result<(), Stri
     Ok(())
 }
 
+fn apply_rope_kv(draft: &mut RopeDraft, key: &str, val: &str) -> Result<(), String> {
+    match key {
+        "length" => draft.length = parse_positive_f64(val, "Rope length")?,
+        "mass" => draft.mass = parse_positive_f64(val, "Rope mass")?,
+        "node_count" => {
+            draft.node_count = val
+                .parse()
+                .map_err(|e| format!("Invalid node count: {}", e))?
+        }
+        "passes" => {
+            draft.passes = val.parse().map_err(|e| format!("Invalid passes: {}", e))?
+        }
+        "p0_x" => draft.p0[0] = parse_finite_f64(val, "p0_x")?,
+        "p0_y" => draft.p0[1] = parse_finite_f64(val, "p0_y")?,
+        "p1_x" => draft.p1[0] = parse_finite_f64(val, "p1_x")?,
+        "p1_y" => draft.p1[1] = parse_finite_f64(val, "p1_y")?,
+        "p1_pinned" => draft.p1_pinned = val == "true" || val == "1",
+        "surface_y" => draft.surface_y = Some(parse_finite_f64(val, "surface_y")?),
+        "friction_mu" => draft.friction_mu = parse_non_negative_f64(val, "friction_mu")?,
+        _ => {}
+    }
+    Ok(())
+}
+
 impl SceneRepository for KinFileStorage {
     fn load(&self, path: &str) -> Result<Scene, String> {
         let meta = fs::metadata(path).map_err(|e| format!("Could not read metadata: {}", e))?;
         if meta.len() > MAX_FILE_SIZE_BYTES {
-            return Err("File exceeds 1 MiB limit".to_string());
+            return Err("File exceeds maximum allowed size (1 MiB)".to_string());
         }
 
         let content =
-            fs::read_to_string(path).map_err(|e| format!("Could not read file: {}", e))?;
+            fs::read_to_string(path).map_err(|e| format!("Could not read file contents: {}", e))?;
         self.parse_str(&content)
     }
 
     fn save(&self, path: &str, scene: &Scene) -> Result<(), String> {
+        let mut file = fs::File::create(path).map_err(|e| format!("Could not open file: {}", e))?;
         let content = self.serialize_scene(scene);
-        let mut file =
-            fs::File::create(path).map_err(|e| format!("Could not create file: {}", e))?;
         file.write_all(content.as_bytes())
-            .map_err(|e| format!("Could not write file: {}", e))?;
-        Ok(())
+            .map_err(|e| format!("Could not write scene: {}", e))
     }
 }
