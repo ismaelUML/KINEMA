@@ -1,11 +1,19 @@
 //! Application Layer / Use Case Orchestration.
 
 use kinema_domain::{
-    analyze_mru_meeting, Body, MeetingOutcome, Motion1D, Mru, ParametricLaw, Scene,
+    analyze_meeting, Body, MeetingOutcome, Motion, Motion1D, Mru, Mruv, ParametricLaw, Scene,
 };
 use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
 
-/// Sample point on a trajectory graph (time, position).
+/// Kinematic curve type for graphing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurveType {
+    Position,
+    Velocity,
+    Acceleration,
+}
+
+/// Sample point on a trajectory graph (time, value).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrajectoryPoint {
     pub time: f64,
@@ -62,13 +70,27 @@ impl SimulationService {
         }
         let body_a = &self.scene.bodies[0];
         let body_b = &self.scene.bodies[1];
-        Some(analyze_mru_meeting(&body_a.motion, &body_b.motion))
+        Some(analyze_meeting(&body_a.motion, &body_b.motion))
     }
 
-    /// Samples the trajectory curve across [t_start, t_end] for graph rendering.
-    pub fn sample_trajectory(
+    /// Finds all bodies with a finite turnaround/stopping instant.
+    pub fn find_stopping_instants(&self) -> Vec<(String, f64, f64)> {
+        self.scene
+            .bodies
+            .iter()
+            .filter_map(|b| {
+                b.motion
+                    .stopping_time()
+                    .map(|ts| (b.id.clone(), ts, b.motion.position_at(ts)))
+            })
+            .collect()
+    }
+
+    /// Samples kinematic curve (position, velocity, or acceleration) across [t_start, t_end].
+    pub fn sample_curve(
         &self,
         body_id: &str,
+        curve: CurveType,
         t_start: f64,
         t_end: f64,
         num_points: usize,
@@ -86,9 +108,10 @@ impl SimulationService {
 
         for i in 0..count {
             let t = t_start + i as f64 * step;
+            let val = eval_motion_curve(&body.motion, curve, t);
             points.push(TrajectoryPoint {
                 time: t,
-                position: body.motion.position_at(t),
+                position: val,
             });
         }
 
@@ -98,12 +121,31 @@ impl SimulationService {
         })
     }
 
+    /// Backward-compatible alias for sampling position trajectory.
+    pub fn sample_trajectory(
+        &self,
+        body_id: &str,
+        t_start: f64,
+        t_end: f64,
+        num_points: usize,
+    ) -> Result<BodyTrajectory, String> {
+        self.sample_curve(body_id, CurveType::Position, t_start, t_end, num_points)
+    }
+
     fn push_undo(&mut self) {
         if self.undo_stack.len() >= Self::MAX_UNDO_LIMIT {
             self.undo_stack.remove(0);
         }
         self.undo_stack.push(self.scene.clone());
         self.redo_stack.clear();
+    }
+}
+
+fn eval_motion_curve(motion: &Motion, curve: CurveType, t: f64) -> f64 {
+    match curve {
+        CurveType::Position => motion.position_at(t),
+        CurveType::Velocity => motion.velocity_at(t),
+        CurveType::Acceleration => motion.acceleration_at(t),
     }
 }
 
@@ -177,6 +219,7 @@ impl ScenarioCatalog for SimulationService {
     fn list_scenarios(&self) -> Vec<String> {
         vec![
             "two_cars_mru".to_string(),
+            "two_cars_mruv".to_string(),
             "parallel_cars".to_string(),
             "coinciding_cars".to_string(),
         ]
@@ -185,6 +228,7 @@ impl ScenarioCatalog for SimulationService {
     fn load_scenario(&mut self, name: &str) -> Result<Scene, String> {
         let scene = match name {
             "two_cars_mru" | "Two cars meeting" => build_two_cars_scenario(),
+            "two_cars_mruv" | "Two cars meeting (MRU vs MRUV)" => build_two_cars_mruv_scenario(),
             "parallel_cars" => build_parallel_scenario(),
             "coinciding_cars" => build_coinciding_scenario(),
             _ => return Err(format!("Unknown scenario '{}'", name)),
@@ -198,45 +242,60 @@ impl ScenarioCatalog for SimulationService {
 
 fn build_two_cars_scenario() -> Scene {
     let mut scene = Scene::new("Two cars meeting");
-    scene.add_body(Body {
-        id: "car_a".to_string(),
-        name: "Car A (15 m/s)".to_string(),
-        motion: Mru::new(0.0, 15.0),
-    });
-    scene.add_body(Body {
-        id: "car_b".to_string(),
-        name: "Car B (-10 m/s)".to_string(),
-        motion: Mru::new(100.0, -10.0),
-    });
+    scene.add_body(Body::new(
+        "car_a",
+        "Car A (15 m/s)",
+        Mru::new(0.0, 15.0),
+    ));
+    scene.add_body(Body::new(
+        "car_b",
+        "Car B (-10 m/s)",
+        Mru::new(100.0, -10.0),
+    ));
+    scene
+}
+
+fn build_two_cars_mruv_scenario() -> Scene {
+    let mut scene = Scene::new("Two cars meeting (MRU vs MRUV)");
+    scene.add_body(Body::new(
+        "car_a",
+        "Car A (MRU 15 m/s)",
+        Mru::new(0.0, 15.0),
+    ));
+    scene.add_body(Body::new(
+        "car_b",
+        "Car B (MRUV v0=-10, a=+2)",
+        Mruv::new(100.0, -10.0, 2.0),
+    ));
     scene
 }
 
 fn build_parallel_scenario() -> Scene {
     let mut scene = Scene::new("Parallel cars never meeting");
-    scene.add_body(Body {
-        id: "car_a".to_string(),
-        name: "Car A".to_string(),
-        motion: Mru::new(0.0, 20.0),
-    });
-    scene.add_body(Body {
-        id: "car_b".to_string(),
-        name: "Car B".to_string(),
-        motion: Mru::new(50.0, 20.0),
-    });
+    scene.add_body(Body::new(
+        "car_a",
+        "Car A",
+        Mru::new(0.0, 20.0),
+    ));
+    scene.add_body(Body::new(
+        "car_b",
+        "Car B",
+        Mru::new(50.0, 20.0),
+    ));
     scene
 }
 
 fn build_coinciding_scenario() -> Scene {
     let mut scene = Scene::new("Coinciding cars");
-    scene.add_body(Body {
-        id: "car_a".to_string(),
-        name: "Car A".to_string(),
-        motion: Mru::new(25.0, 10.0),
-    });
-    scene.add_body(Body {
-        id: "car_b".to_string(),
-        name: "Car B".to_string(),
-        motion: Mru::new(25.0, 10.0),
-    });
+    scene.add_body(Body::new(
+        "car_a",
+        "Car A",
+        Mru::new(25.0, 10.0),
+    ));
+    scene.add_body(Body::new(
+        "car_b",
+        "Car B",
+        Mru::new(25.0, 10.0),
+    ));
     scene
 }
