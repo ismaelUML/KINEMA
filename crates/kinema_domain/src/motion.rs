@@ -83,11 +83,33 @@ pub struct Mruv {
     pub x0: f64,
     pub v0: f64,
     pub a: f64,
+    /// When true, once brakes bring speed to zero, the vehicle stops instead of reversing.
+    pub stops_at_rest: bool,
 }
 
 impl Mruv {
     pub fn new(x0: f64, v0: f64, a: f64) -> Self {
-        Self { x0, v0, a }
+        Self {
+            x0,
+            v0,
+            a,
+            stops_at_rest: false,
+        }
+    }
+
+    /// Explicit vehicle braking constructor where tires stop rolling once v=0.
+    pub fn braking(x0: f64, v0: f64, a: f64) -> Self {
+        Self {
+            x0,
+            v0,
+            a,
+            stops_at_rest: true,
+        }
+    }
+
+    pub fn with_stop_at_rest(mut self, stops_at_rest: bool) -> Self {
+        self.stops_at_rest = stops_at_rest;
+        self
     }
 
     /// Stopping instant: t_s = -v_0 / a, only when v_0 and a have opposite signs.
@@ -111,14 +133,36 @@ impl Mruv {
 
 impl Motion1D for Mruv {
     fn position_at(&self, t: f64) -> f64 {
+        // Cars with brakes do not sprout rocket thrusters into reverse when they hit 0 km/h.
+        if self.stops_at_rest {
+            if let Some(ts) = self.stopping_time() {
+                if t >= ts {
+                    return self.x0 + self.v0 * ts + 0.5 * self.a * ts * ts;
+                }
+            }
+        }
         self.x0 + self.v0 * t + 0.5 * self.a * t * t
     }
 
     fn velocity_at(&self, t: f64) -> f64 {
+        if self.stops_at_rest {
+            if let Some(ts) = self.stopping_time() {
+                if t >= ts {
+                    return 0.0;
+                }
+            }
+        }
         self.v0 + self.a * t
     }
 
-    fn acceleration_at(&self, _t: f64) -> f64 {
+    fn acceleration_at(&self, t: f64) -> f64 {
+        if self.stops_at_rest {
+            if let Some(ts) = self.stopping_time() {
+                if t >= ts {
+                    return 0.0;
+                }
+            }
+        }
         self.a
     }
 }
@@ -203,11 +247,23 @@ pub struct Mvl {
     pub y0: f64,
     pub v0: f64,
     pub g: f64,
+    /// When true, once an object hits ground (y <= 0), it comes to rest on the ground.
+    pub stops_at_ground: bool,
 }
 
 impl Mvl {
     pub fn new(y0: f64, v0: f64, g: f64) -> Self {
-        Self { y0, v0, g }
+        Self {
+            y0,
+            v0,
+            g,
+            stops_at_ground: false,
+        }
+    }
+
+    pub fn with_ground_stop(mut self, stops_at_ground: bool) -> Self {
+        self.stops_at_ground = stops_at_ground;
+        self
     }
 
     /// Time to apex when thrown upwards: t_up = v0 / g
@@ -259,14 +315,36 @@ impl Mvl {
 
 impl Motion1D for Mvl {
     fn position_at(&self, t: f64) -> f64 {
+        // Unless we are drilling a subway tunnel, solid ground halts vertical falls.
+        if self.stops_at_ground {
+            if let Some(ti) = self.impact_instant() {
+                if t >= ti {
+                    return 0.0;
+                }
+            }
+        }
         self.y0 + self.v0 * t - 0.5 * self.g * t * t
     }
 
     fn velocity_at(&self, t: f64) -> f64 {
+        if self.stops_at_ground {
+            if let Some(ti) = self.impact_instant() {
+                if t >= ti {
+                    return 0.0;
+                }
+            }
+        }
         self.v0 - self.g * t
     }
 
     fn acceleration_at(&self, _t: f64) -> f64 {
+        if self.stops_at_ground {
+            if let Some(ti) = self.impact_instant() {
+                if _t >= ti {
+                    return 0.0;
+                }
+            }
+        }
         -self.g
     }
 }

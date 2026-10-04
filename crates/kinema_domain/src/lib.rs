@@ -16,4 +16,4 @@ pub use meeting::{
 pub use motion::{GravityPreset, Motion, Motion1D, Mru, Mruv, Mvl, ParametricLaw};
 pub use pulley::{AtwoodMachine, TablePulleySystem};
 pub use rope::{ParticleRope, RopeNode};
-pub use scene::{Body, Scene};
+pub use scene::{Body, EntityKind, Scene};

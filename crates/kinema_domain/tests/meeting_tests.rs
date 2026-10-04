@@ -235,3 +235,63 @@ fn test_m3_gravity_presets() {
     assert_eq!(presets[1].name, "Moon");
     assert_eq!(presets[1].g, 1.62);
 }
+
+#[test]
+fn test_mruv_braking_no_reverse_ghosting() {
+    use kinema_domain::motion::{Motion1D, Mruv};
+
+    // Car braking from 100m, v0 = -10 m/s, a = +2 m/s^2.
+    // Stops at t = 5s at x = 100 - 10*5 + 0.5*2*25 = 75m.
+    let car = Mruv::braking(100.0, -10.0, 2.0);
+    assert_eq!(car.stopping_time(), Some(5.0));
+
+    // Before stop: moving left
+    assert!((car.velocity_at(2.5) - (-5.0)).abs() < 1e-9);
+
+    // At stop (t = 5s): rest
+    assert_eq!(car.velocity_at(5.0), 0.0);
+    assert_eq!(car.acceleration_at(5.0), 0.0);
+    assert_eq!(car.position_at(5.0), 75.0);
+
+    // After stop (t = 10s): MUST REMAIN STOPPED AT 75m, NOT ACCELERATE IN REVERSE
+    assert_eq!(car.velocity_at(10.0), 0.0);
+    assert_eq!(car.acceleration_at(10.0), 0.0);
+    assert_eq!(car.position_at(10.0), 75.0);
+}
+
+#[test]
+fn test_mvl_ground_stop() {
+    use kinema_domain::motion::{Motion1D, Mvl};
+
+    // Dropping from 20m on Earth (g = 9.81 m/s^2)
+    let drop = Mvl::new(20.0, 0.0, 9.81).with_ground_stop(true);
+    let t_i = drop.impact_instant().expect("impacts ground");
+
+    // Before impact
+    assert!(drop.position_at(1.0) > 0.0);
+
+    // After impact (t = 10s): rests on ground at y = 0
+    assert_eq!(drop.position_at(10.0), 0.0);
+    assert_eq!(drop.velocity_at(10.0), 0.0);
+    assert_eq!(drop.acceleration_at(10.0), 0.0);
+    assert!(drop.position_at(t_i).abs() < 1e-4);
+}
+
+#[test]
+fn test_body_entity_kind_metadata() {
+    use kinema_domain::{Body, EntityKind, Mru};
+
+    let car = Body::new("c1", "Car 1", Mru::new(0.0, 10.0))
+        .with_kind(EntityKind::Vehicle { lane: 1 });
+    assert_eq!(car.kind, EntityKind::Vehicle { lane: 1 });
+
+    let crate_body = Body::new("box", "Crate", Mru::new(0.0, 0.0)).with_kind(
+        EntityKind::FrictionBlock {
+            mass: 50.0,
+            mu_s: 0.4,
+            mu_k: 0.25,
+            f_app: 250.0,
+        },
+    );
+    assert!(matches!(crate_body.kind, EntityKind::FrictionBlock { .. }));
+}
