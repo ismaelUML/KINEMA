@@ -85,3 +85,59 @@ fn test_ui_presenter_m2_mruv_stopping_and_velocity_graph() {
     assert_eq!(model.graph_series.len(), 2);
     assert_eq!(model.active_graph_kind, GraphKind::VelocityTime);
 }
+
+#[test]
+fn test_ui_presenter_m3_20m_drop_impact_marker() {
+    use kinema_domain::motion::Mvl;
+    use kinema_domain::scene::Body;
+
+    let mut presenter = UiPresenter::new();
+    let mut scene = Scene::new("20m Free Fall");
+    scene.add_body(Body::new("ball", "Dropping Ball", Mvl::new(20.0, 0.0, 9.81)));
+
+    presenter.consume_snapshot(&scene, 1.0);
+
+    let model = presenter.model();
+    assert_eq!(model.bodies.len(), 1);
+    assert!(model.bodies[0].formula_text.contains("y(t) = 20.00"));
+    assert_eq!(model.apex_markers.len(), 0);
+
+    // Impact marker
+    assert_eq!(model.impact_markers.len(), 1);
+    let marker = &model.impact_markers[0];
+    assert_eq!(marker.body_id, "ball");
+    assert!((marker.time - 2.01927).abs() < 1e-4);
+    assert!((marker.speed - 19.809).abs() < 1e-3);
+    assert!(marker.label.contains("impact (Dropping Ball at t=2.02s"));
+}
+
+#[test]
+fn test_ui_presenter_m3_vertical_projectile_apex_and_impact() {
+    use kinema_domain::motion::Mvl;
+    use kinema_domain::scene::Body;
+
+    let mut presenter = UiPresenter::new();
+    let mut scene = Scene::new("Vertical Projectile");
+    scene.add_body(Body::new(
+        "rock",
+        "Launched Rock",
+        Mvl::new(0.0, 20.0, 9.81),
+    ));
+
+    presenter.consume_snapshot(&scene, 0.0);
+
+    let model = presenter.model();
+    assert_eq!(model.apex_markers.len(), 1);
+    let apex = &model.apex_markers[0];
+    assert_eq!(apex.body_id, "rock");
+    assert!((apex.time - (20.0 / 9.81)).abs() < 1e-4);
+    assert!((apex.height - (400.0 / 19.62)).abs() < 1e-4);
+    assert!(apex.label.contains("apex (Launched Rock at t=2.04s"));
+
+    assert_eq!(model.impact_markers.len(), 1);
+    let impact = &model.impact_markers[0];
+    assert_eq!(impact.body_id, "rock");
+    assert!((impact.time - (40.0 / 9.81)).abs() < 1e-4);
+    assert!((impact.speed - 20.0).abs() < 1e-4);
+}
+

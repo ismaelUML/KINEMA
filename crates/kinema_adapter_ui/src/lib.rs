@@ -47,6 +47,24 @@ pub struct UiStoppingMarker {
     pub label: String,
 }
 
+/// Apex marker for free vertical motion (t_up, h_max).
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiApexMarker {
+    pub body_id: String,
+    pub time: f64,
+    pub height: f64,
+    pub label: String,
+}
+
+/// Ground impact marker for free vertical motion (t_impact, |v_impact|).
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiImpactMarker {
+    pub body_id: String,
+    pub time: f64,
+    pub speed: f64,
+    pub label: String,
+}
+
 /// A series of points for plotting a kinematic line curve.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiGraphSeries {
@@ -63,6 +81,8 @@ pub struct UiViewModel {
     pub meeting_diagnosis: String,
     pub meeting_markers: Vec<UiMeetingMarker>,
     pub stopping_markers: Vec<UiStoppingMarker>,
+    pub apex_markers: Vec<UiApexMarker>,
+    pub impact_markers: Vec<UiImpactMarker>,
     pub active_graph_kind: GraphKind,
     pub graph_series: Vec<UiGraphSeries>,
     pub status_message: String,
@@ -77,6 +97,8 @@ impl Default for UiViewModel {
             meeting_diagnosis: "No bodies loaded".to_string(),
             meeting_markers: Vec::new(),
             stopping_markers: Vec::new(),
+            apex_markers: Vec::new(),
+            impact_markers: Vec::new(),
             active_graph_kind: GraphKind::PositionTime,
             graph_series: Vec::new(),
             status_message: "Ready.".to_string(),
@@ -126,14 +148,13 @@ impl SnapshotSink for UiPresenter {
         self.model.meeting_diagnosis = diag;
         self.model.meeting_markers = markers;
         self.model.stopping_markers = build_stopping_markers(&scene.bodies);
+        self.model.apex_markers = build_apex_markers(&scene.bodies);
+        self.model.impact_markers = build_impact_markers(&scene.bodies);
 
-        let t_max = self
-            .model
-            .meeting_markers
-            .last()
-            .map(|m| m.time.abs() * 1.5)
-            .unwrap_or(10.0)
-            .max(10.0);
+        let t_max = compute_graph_t_max(
+            &self.model.meeting_markers,
+            &self.model.impact_markers,
+        );
         self.model.graph_series =
             build_graph_series(&scene.bodies, self.model.active_graph_kind, t_max);
 
@@ -195,6 +216,46 @@ fn build_stopping_markers(bodies: &[Body]) -> Vec<UiStoppingMarker> {
             })
         })
         .collect()
+}
+
+fn build_apex_markers(bodies: &[Body]) -> Vec<UiApexMarker> {
+    bodies
+        .iter()
+        .filter_map(|b| {
+            b.motion.apex().map(|(t_up, h_max)| UiApexMarker {
+                body_id: b.id.clone(),
+                time: t_up,
+                height: h_max,
+                label: format!("apex ({} at t={:.2}s, y={:.2}m)", b.name, t_up, h_max),
+            })
+        })
+        .collect()
+}
+
+fn build_impact_markers(bodies: &[Body]) -> Vec<UiImpactMarker> {
+    bodies
+        .iter()
+        .filter_map(|b| {
+            b.motion.ground_impact().map(|(t_i, v_i)| UiImpactMarker {
+                body_id: b.id.clone(),
+                time: t_i,
+                speed: v_i,
+                label: format!("impact ({} at t={:.2}s, |v|={:.2}m/s)", b.name, t_i, v_i),
+            })
+        })
+        .collect()
+}
+
+fn compute_graph_t_max(
+    meeting_markers: &[UiMeetingMarker],
+    impact_markers: &[UiImpactMarker],
+) -> f64 {
+    impact_markers
+        .last()
+        .map(|m| m.time * 1.2)
+        .or_else(|| meeting_markers.last().map(|m| m.time.abs() * 1.5))
+        .unwrap_or(10.0)
+        .max(10.0)
 }
 
 fn make_marker(inst: MeetingInstant) -> UiMeetingMarker {
