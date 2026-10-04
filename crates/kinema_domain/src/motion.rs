@@ -310,12 +310,15 @@ impl ParametricLaw for Mvl {
     }
 }
 
-/// Dynamic motion discriminator supporting MRU, MRUV and MVL.
+use crate::dynamics::{BlockDynamics, FreeBodyDiagram};
+
+/// Dynamic motion discriminator supporting MRU, MRUV, MVL, and Dynamics.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Motion {
     Mru(Mru),
     Mruv(Mruv),
     Mvl(Mvl),
+    Dynamics(BlockDynamics),
 }
 
 impl Motion {
@@ -324,6 +327,7 @@ impl Motion {
             Motion::Mru(_) => None,
             Motion::Mruv(m) => m.stopping_time(),
             Motion::Mvl(m) => m.time_to_apex(),
+            Motion::Dynamics(d) => d.stopping_time(),
         }
     }
 
@@ -345,6 +349,14 @@ impl Motion {
             _ => None,
         }
     }
+
+    /// Free-Body Diagram snapshot for dynamic bodies.
+    pub fn free_body_diagram(&self, v: f64) -> Option<FreeBodyDiagram> {
+        match self {
+            Motion::Dynamics(d) => Some(d.free_body_diagram(v)),
+            _ => None,
+        }
+    }
 }
 
 impl Motion1D for Motion {
@@ -353,6 +365,7 @@ impl Motion1D for Motion {
             Motion::Mru(m) => m.position_at(t),
             Motion::Mruv(m) => m.position_at(t),
             Motion::Mvl(m) => m.position_at(t),
+            Motion::Dynamics(d) => d.position_at(t),
         }
     }
 
@@ -361,6 +374,7 @@ impl Motion1D for Motion {
             Motion::Mru(m) => m.velocity_at(t),
             Motion::Mruv(m) => m.velocity_at(t),
             Motion::Mvl(m) => m.velocity_at(t),
+            Motion::Dynamics(d) => d.velocity_at(t),
         }
     }
 
@@ -369,6 +383,7 @@ impl Motion1D for Motion {
             Motion::Mru(m) => m.acceleration_at(t),
             Motion::Mruv(m) => m.acceleration_at(t),
             Motion::Mvl(m) => m.acceleration_at(t),
+            Motion::Dynamics(d) => d.acceleration_at(t),
         }
     }
 }
@@ -379,6 +394,7 @@ impl ParametricLaw for Motion {
             Motion::Mru(m) => m.formula_text(),
             Motion::Mruv(m) => m.formula_text(),
             Motion::Mvl(m) => m.formula_text(),
+            Motion::Dynamics(d) => d.formula_text(),
         }
     }
 
@@ -387,6 +403,7 @@ impl ParametricLaw for Motion {
             Motion::Mru(m) => m.parameters(),
             Motion::Mruv(m) => m.parameters(),
             Motion::Mvl(m) => m.parameters(),
+            Motion::Dynamics(d) => d.parameters(),
         }
     }
 
@@ -395,6 +412,7 @@ impl ParametricLaw for Motion {
             Motion::Mru(m) => m.set_parameter(name, value),
             Motion::Mruv(m) => m.set_parameter(name, value),
             Motion::Mvl(m) => m.set_parameter(name, value),
+            Motion::Dynamics(d) => d.set_parameter(name, value),
         }
     }
 }
@@ -414,5 +432,11 @@ impl From<Mruv> for Motion {
 impl From<Mvl> for Motion {
     fn from(m: Mvl) -> Self {
         Motion::Mvl(m)
+    }
+}
+
+impl From<BlockDynamics> for Motion {
+    fn from(d: BlockDynamics) -> Self {
+        Motion::Dynamics(d)
     }
 }
