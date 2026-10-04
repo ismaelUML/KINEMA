@@ -1,13 +1,47 @@
 //! Driving/Presenter Adapter: UI State, rendering abstractions, and presenter sink.
 
-use kinema_domain::Scene;
+use kinema_domain::{
+    analyze_mru_meeting, Body, MeetingInstant, MeetingOutcome, Motion1D, ParametricLaw, Scene,
+};
 use kinema_ports::SnapshotSink;
+
+/// UI representation of a single body in the inspector and scene.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiBodyView {
+    pub id: String,
+    pub name: String,
+    pub x0: f64,
+    pub v: f64,
+    pub current_position: f64,
+    pub current_velocity: f64,
+    pub formula_text: String,
+}
+
+/// Meeting marker rendered on the timeline and x-t graph.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiMeetingMarker {
+    pub time: f64,
+    pub position: f64,
+    pub is_past: bool,
+    pub label: String,
+}
+
+/// A series of points for plotting an x-t trajectory line.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiGraphSeries {
+    pub body_id: String,
+    pub body_name: String,
+    pub points: Vec<(f64, f64)>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiViewModel {
     pub window_title: String,
     pub current_time: f64,
-    pub bodies_count: usize,
+    pub bodies: Vec<UiBodyView>,
+    pub meeting_diagnosis: String,
+    pub meeting_markers: Vec<UiMeetingMarker>,
+    pub graph_series: Vec<UiGraphSeries>,
     pub status_message: String,
 }
 
@@ -16,7 +50,10 @@ impl Default for UiViewModel {
         Self {
             window_title: "KINEMA - [Interactive Physics Workbench]".to_string(),
             current_time: 0.0,
-            bodies_count: 0,
+            bodies: Vec::new(),
+            meeting_diagnosis: "No bodies loaded".to_string(),
+            meeting_markers: Vec::new(),
+            graph_series: Vec::new(),
             status_message: "Ready.".to_string(),
         }
     }
@@ -54,7 +91,88 @@ impl SnapshotSink for UiPresenter {
     fn consume_snapshot(&mut self, scene: &Scene, current_time: f64) {
         self.model.window_title = format!("KINEMA - [{}]", scene.name);
         self.model.current_time = current_time;
-        self.model.bodies_count = scene.bodies.len();
-        self.model.status_message = format!("Running ({} bodies)", scene.bodies.len());
+        self.model.bodies = build_body_views(&scene.bodies, current_time);
+
+        let (diag, markers) = compute_meeting_analysis(&scene.bodies);
+        self.model.meeting_diagnosis = diag;
+        self.model.meeting_markers = markers;
+
+        let t_max = self
+            .model
+            .meeting_markers
+            .first()
+            .map(|m| m.time.abs() * 1.5)
+            .unwrap_or(10.0)
+            .max(10.0);
+        self.model.graph_series = build_graph_series(&scene.bodies, t_max);
+
+        self.model.status_message = format!("Scene: '{}' | t = {:.2}s", scene.name, current_time);
     }
+}
+
+fn build_body_views(bodies: &[Body], current_time: f64) -> Vec<UiBodyView> {
+    bodies
+        .iter()
+        .map(|b| UiBodyView {
+            id: b.id.clone(),
+            name: b.name.clone(),
+            x0: b.motion.x0,
+            v: b.motion.v,
+            current_position: b.motion.position_at(current_time),
+            current_velocity: b.motion.velocity_at(current_time),
+            formula_text: b.motion.formula_text(),
+        })
+        .collect()
+}
+
+fn compute_meeting_analysis(bodies: &[Body]) -> (String, Vec<UiMeetingMarker>) {
+    if bodies.len() < 2 {
+        return (
+            "Insufficient bodies for meeting analysis".to_string(),
+            Vec::new(),
+        );
+    }
+
+    let outcome = analyze_mru_meeting(&bodies[0].motion, &bodies[1].motion);
+    let msg = outcome.diagnostic_message().to_string();
+    let markers = match outcome {
+        MeetingOutcome::Single(inst) => vec![make_marker(inst)],
+        MeetingOutcome::Dual(i1, i2) => vec![make_marker(i1), make_marker(i2)],
+        _ => Vec::new(),
+    };
+
+    (msg, markers)
+}
+
+fn make_marker(inst: MeetingInstant) -> UiMeetingMarker {
+    let label = if inst.is_past {
+        format!("past (t={:.2}s, x={:.2}m)", inst.time, inst.position)
+    } else {
+        format!("meeting (t={:.2}s, x={:.2}m)", inst.time, inst.position)
+    };
+    UiMeetingMarker {
+        time: inst.time,
+        position: inst.position,
+        is_past: inst.is_past,
+        label,
+    }
+}
+
+fn build_graph_series(bodies: &[Body], t_end: f64) -> Vec<UiGraphSeries> {
+    bodies
+        .iter()
+        .map(|b| {
+            let points = (0..=10)
+                .map(|i| {
+                    let t = (t_end * i as f64) / 10.0;
+                    (t, b.motion.position_at(t))
+                })
+                .collect();
+            UiGraphSeries {
+                body_id: b.id.clone(),
+                body_name: b.name.clone(),
+                points,
+            }
+        })
+        .collect()
 }
