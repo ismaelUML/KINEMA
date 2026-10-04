@@ -1,6 +1,28 @@
-//! Port interfaces (Input and Output boundaries) for KINEMA.
-
 use kinema_domain::Scene;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+/// Cooperative cancellation token for long-running operations like PNG export or batch runs.
+#[derive(Debug, Clone, Default)]
+pub struct CancellationToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CancellationToken {
+    pub fn new() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
 
 /// Input Port: Simulation control lifecycle.
 pub trait SimulationControl {
@@ -32,7 +54,19 @@ pub trait SceneRepository {
     fn save(&self, path: &str, scene: &Scene) -> Result<(), String>;
 }
 
+/// Output Port: Canvas image export with cooperative cancellation.
+pub trait ImageExporter {
+    fn export_png(
+        &self,
+        scene: &Scene,
+        time: f64,
+        path: &str,
+        token: &CancellationToken,
+    ) -> Result<(), String>;
+}
+
 /// Output Port: Snapshot sink (UI/Presenter sink).
 pub trait SnapshotSink {
     fn consume_snapshot(&mut self, scene: &Scene, current_time: f64);
 }
+
