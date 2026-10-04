@@ -1,6 +1,7 @@
 use kinema_domain::{
-    analyze_meeting, AtwoodMachine, Body, FreeBodyDiagram, FrictionState, MeetingInstant,
-    MeetingOutcome, Motion, Motion1D, ParametricLaw, ParticleRope, Scene, TablePulleySystem,
+    analyze_meeting, AtwoodMachine, Body, EntityKind, FreeBodyDiagram, FrictionState,
+    MeetingInstant, MeetingOutcome, Motion, Motion1D, ParametricLaw, ParticleRope, Scene,
+    TablePulleySystem,
 };
 use kinema_ports::SnapshotSink;
 
@@ -18,6 +19,7 @@ pub enum GraphKind {
 pub struct UiBodyView {
     pub id: String,
     pub name: String,
+    pub kind: EntityKind,
     pub x0: f64,
     pub v0: f64,
     pub a: f64,
@@ -375,6 +377,7 @@ fn build_body_views(bodies: &[Body], current_time: f64) -> Vec<UiBodyView> {
         .map(|b| UiBodyView {
             id: b.id.clone(),
             name: b.name.clone(),
+            kind: b.kind.clone(),
             x0: b.motion.position_at(0.0),
             v0: b.motion.velocity_at(0.0),
             a: b.motion.acceleration_at(0.0),
