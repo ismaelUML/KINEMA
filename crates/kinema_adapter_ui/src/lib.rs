@@ -1,6 +1,6 @@
 use kinema_domain::{
-    analyze_meeting, Body, FreeBodyDiagram, FrictionState, MeetingInstant, MeetingOutcome,
-    Motion1D, ParametricLaw, Scene,
+    analyze_meeting, AtwoodMachine, Body, FreeBodyDiagram, FrictionState, MeetingInstant,
+    MeetingOutcome, Motion, Motion1D, ParametricLaw, ParticleRope, Scene, TablePulleySystem,
 };
 use kinema_ports::SnapshotSink;
 
@@ -86,6 +86,39 @@ pub struct UiFbdView {
     pub arrows: Vec<UiFbdArrow>,
 }
 
+/// View of an ideal pulley system (Atwood machine or table pulley).
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiPulleyView {
+    pub body_id: String,
+    pub system_type: String,
+    pub tension: f64,
+    pub acceleration: f64,
+    pub mass1_pos: f64,
+    pub mass2_pos: f64,
+    pub status_text: String,
+}
+
+/// Visual segment along a particle-chain rope with tension color mapping.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiRopeSegmentView {
+    pub p0: [f64; 2],
+    pub p1: [f64; 2],
+    pub tension: f64,
+    pub tension_ratio: f64,
+    pub color_hex: String,
+}
+
+/// Canvas representation of a particle-chain rope with color ramp along segments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiRopeView {
+    pub rope_id: String,
+    pub node_count: usize,
+    pub total_length: f64,
+    pub stretch_percent: f64,
+    pub nodes: Vec<[f64; 2]>,
+    pub segments: Vec<UiRopeSegmentView>,
+}
+
 /// A series of points for plotting a kinematic line curve.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiGraphSeries {
@@ -107,6 +140,8 @@ pub struct UiViewModel {
     pub active_graph_kind: GraphKind,
     pub graph_series: Vec<UiGraphSeries>,
     pub fbd_views: Vec<UiFbdView>,
+    pub pulley_views: Vec<UiPulleyView>,
+    pub rope_views: Vec<UiRopeView>,
     pub status_message: String,
 }
 
@@ -124,6 +159,8 @@ impl Default for UiViewModel {
             active_graph_kind: GraphKind::PositionTime,
             graph_series: Vec::new(),
             fbd_views: Vec::new(),
+            pulley_views: Vec::new(),
+            rope_views: Vec::new(),
             status_message: "Ready.".to_string(),
         }
     }
@@ -174,6 +211,8 @@ impl SnapshotSink for UiPresenter {
         self.model.apex_markers = build_apex_markers(&scene.bodies);
         self.model.impact_markers = build_impact_markers(&scene.bodies);
         self.model.fbd_views = build_fbd_views(&scene.bodies, current_time);
+        self.model.pulley_views = build_pulley_views(&scene.bodies, current_time);
+        self.model.rope_views = build_rope_views(&scene.ropes);
 
         let t_max = compute_graph_t_max(&self.model.meeting_markers, &self.model.impact_markers);
         self.model.graph_series =
@@ -378,3 +417,117 @@ fn build_graph_series(bodies: &[Body], kind: GraphKind, t_end: f64) -> Vec<UiGra
         })
         .collect()
 }
+
+fn build_pulley_views(bodies: &[Body], current_time: f64) -> Vec<UiPulleyView> {
+    bodies
+        .iter()
+        .filter_map(|b| make_single_pulley_view(b, current_time))
+        .collect()
+}
+
+fn make_single_pulley_view(body: &Body, current_time: f64) -> Option<UiPulleyView> {
+    match &body.motion {
+        Motion::Atwood(a) => Some(make_atwood_view(body, a, current_time)),
+        Motion::TablePulley(p) => Some(make_table_pulley_view(body, p, current_time)),
+        _ => None,
+    }
+}
+
+fn make_atwood_view(body: &Body, a: &AtwoodMachine, current_time: f64) -> UiPulleyView {
+    UiPulleyView {
+        body_id: body.id.clone(),
+        system_type: "Atwood Machine".to_string(),
+        tension: a.tension(),
+        acceleration: a.acceleration(),
+        mass1_pos: a.mass1_position_at(current_time),
+        mass2_pos: a.mass2_position_at(current_time),
+        status_text: format!(
+            "m1={:.2}kg, m2={:.2}kg | a={:.3}m/s² | T={:.2}N",
+            a.m1,
+            a.m2,
+            a.acceleration(),
+            a.tension()
+        ),
+    }
+}
+
+fn make_table_pulley_view(
+    body: &Body,
+    p: &TablePulleySystem,
+    current_time: f64,
+) -> UiPulleyView {
+    UiPulleyView {
+        body_id: body.id.clone(),
+        system_type: "Table Pulley".to_string(),
+        tension: p.tension(),
+        acceleration: p.acceleration(),
+        mass1_pos: p.position_at(current_time),
+        mass2_pos: -p.position_at(current_time),
+        status_text: format!(
+            "m1={:.2}kg, m2={:.2}kg | state={:?} | a={:.3}m/s² | T={:.2}N",
+            p.m1,
+            p.m2,
+            p.friction_state(),
+            p.acceleration(),
+            p.tension()
+        ),
+    }
+}
+
+fn build_rope_views(ropes: &[ParticleRope]) -> Vec<UiRopeView> {
+    ropes.iter().enumerate().map(make_single_rope_view).collect()
+}
+
+fn make_single_rope_view((idx, rope): (usize, &ParticleRope)) -> UiRopeView {
+    let dt = 1.0 / 240.0;
+    let tensions = rope.segment_tensions(dt);
+    let max_t = tensions.iter().copied().fold(1.0_f64, f64::max);
+    let segments = build_rope_segments(rope, &tensions, max_t);
+
+    UiRopeView {
+        rope_id: format!("rope_{}", idx + 1),
+        node_count: rope.nodes.len(),
+        total_length: rope.total_length,
+        stretch_percent: rope.stretch_ratio() * 100.0,
+        nodes: rope.nodes.iter().map(|n| n.pos).collect(),
+        segments,
+    }
+}
+
+fn build_rope_segments(
+    rope: &ParticleRope,
+    tensions: &[f64],
+    max_t: f64,
+) -> Vec<UiRopeSegmentView> {
+    tensions
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| {
+            let ratio = (t / max_t).clamp(0.0, 1.0);
+            UiRopeSegmentView {
+                p0: rope.nodes[i].pos,
+                p1: rope.nodes[i + 1].pos,
+                tension: t,
+                tension_ratio: ratio,
+                color_hex: tension_to_color_hex(ratio),
+            }
+        })
+        .collect()
+}
+
+/// Maps normalized tension [0.0, 1.0] to a hex RGB color ramp from blue to red.
+pub fn tension_to_color_hex(ratio: f64) -> String {
+    let r = ratio.clamp(0.0, 1.0);
+    let (red, green, blue) = if r < 0.33 {
+        let t = r / 0.33;
+        (0.0, t * 255.0, (1.0 - t) * 255.0)
+    } else if r < 0.66 {
+        let t = (r - 0.33) / 0.33;
+        (t * 255.0, 255.0, 0.0)
+    } else {
+        let t = (r - 0.66) / 0.34;
+        (255.0, (1.0 - t) * 255.0, 0.0)
+    };
+    format!("#{:02X}{:02X}{:02X}", red as u8, green as u8, blue as u8)
+}
+

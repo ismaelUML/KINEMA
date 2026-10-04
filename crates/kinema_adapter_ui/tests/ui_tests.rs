@@ -165,3 +165,64 @@ fn test_ui_presenter_m4_dynamics_fbd() {
     assert_eq!(fbd_view.net_force, 0.0);
     assert_eq!(fbd_view.arrows.len(), 4);
 }
+
+#[test]
+fn test_ui_presenter_m5_pulley_views() {
+    use kinema_domain::pulley::{AtwoodMachine, TablePulleySystem};
+    use kinema_domain::scene::Body;
+
+    let mut presenter = UiPresenter::new();
+    let mut scene = Scene::new("Pulley Systems");
+    let atwood = AtwoodMachine::new(2.0, 3.0).unwrap().with_gravity(9.81);
+    let table = TablePulleySystem::new(10.0, 6.0, 0.5, 0.3)
+        .unwrap()
+        .with_gravity(9.81);
+
+    scene.add_body(Body::new("atwood", "Atwood", atwood));
+    scene.add_body(Body::new("table", "Table Pulley", table));
+
+    presenter.consume_snapshot(&scene, 1.0);
+
+    let model = presenter.model();
+    assert_eq!(model.pulley_views.len(), 2);
+
+    let atwood_view = &model.pulley_views[0];
+    assert_eq!(atwood_view.system_type, "Atwood Machine");
+    assert!((atwood_view.tension - 23.544).abs() < 1e-4);
+    assert!((atwood_view.acceleration - 1.962).abs() < 1e-4);
+
+    let table_view = &model.pulley_views[1];
+    assert_eq!(table_view.system_type, "Table Pulley");
+    assert!((table_view.tension - 47.82375).abs() < 1e-4);
+}
+
+#[test]
+fn test_ui_presenter_m5_rope_views_and_color_ramp() {
+    use kinema_adapter_ui::tension_to_color_hex;
+    use kinema_domain::rope::ParticleRope;
+
+    // Test color ramp helper
+    assert_eq!(tension_to_color_hex(0.0), "#0000FF"); // pure blue
+    assert_eq!(tension_to_color_hex(1.0), "#FF0000"); // pure red
+
+    let mut presenter = UiPresenter::new();
+    let mut scene = Scene::new("Rope Canvas");
+    let rope = ParticleRope::new_catenary([0.0, 3.0], [2.0, 3.0], 2.5, 1.0).unwrap();
+    scene.add_rope(rope);
+
+    presenter.consume_snapshot(&scene, 0.0);
+
+    let model = presenter.model();
+    assert_eq!(model.rope_views.len(), 1);
+    let rope_view = &model.rope_views[0];
+    assert_eq!(rope_view.node_count, 24);
+    assert_eq!(rope_view.segments.len(), 23);
+
+    // Each segment has valid coordinates and non-empty hex color string
+    for seg in &rope_view.segments {
+        assert!(seg.color_hex.starts_with('#'));
+        assert_eq!(seg.color_hex.len(), 7);
+        assert!(seg.tension_ratio >= 0.0 && seg.tension_ratio <= 1.0);
+    }
+}
+
