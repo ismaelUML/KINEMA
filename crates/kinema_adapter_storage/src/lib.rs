@@ -1,6 +1,4 @@
-//! Driven Adapter: .kin Scene File Storage with input hardening.
-
-use kinema_domain::motion::Mru;
+use kinema_domain::motion::{Motion, Mru, Mruv};
 use kinema_domain::scene::{Body, Scene};
 use kinema_ports::SceneRepository;
 use std::fs;
@@ -12,6 +10,46 @@ pub const MAX_BODIES_COUNT: usize = 256;
 #[derive(Default)]
 pub struct KinFileStorage;
 
+#[derive(Default)]
+struct BodyDraft {
+    id: String,
+    motion_type: String,
+    x0: f64,
+    v: f64,
+    a: f64,
+}
+
+impl BodyDraft {
+    fn new(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            motion_type: "mru".to_string(),
+            x0: 0.0,
+            v: 0.0,
+            a: 0.0,
+        }
+    }
+
+    fn into_body(self) -> Body {
+        let motion: Motion = if self.motion_type == "mruv" || self.a.abs() > 1e-12 {
+            Mruv::new(self.x0, self.v, self.a).into()
+        } else {
+            Mru::new(self.x0, self.v).into()
+        };
+        Body::new(&self.id, &self.id, motion)
+    }
+}
+
+fn parse_finite_f64(val: &str, field: &str) -> Result<f64, String> {
+    let num: f64 = val
+        .parse()
+        .map_err(|e| format!("Invalid {}: {}", field, e))?;
+    if num.is_nan() || num.is_infinite() {
+        return Err(format!("{} must be finite", field));
+    }
+    Ok(num)
+}
+
 impl KinFileStorage {
     pub fn new() -> Self {
         Self
@@ -19,9 +57,7 @@ impl KinFileStorage {
 
     pub fn parse_str(&self, content: &str) -> Result<Scene, String> {
         let mut scene = Scene::default();
-        let mut current_body_id: Option<String> = None;
-        let mut current_x0 = 0.0;
-        let mut current_v = 0.0;
+        let mut current_draft: Option<BodyDraft> = None;
 
         for raw_line in content.lines() {
             let line = raw_line.split('#').next().unwrap_or("").trim();
@@ -30,66 +66,23 @@ impl KinFileStorage {
             }
 
             if line.starts_with('[') && line.ends_with(']') {
-                let section = &line[1..line.len() - 1].trim();
-                if let Some(id) = current_body_id.take() {
-                    if scene.bodies.len() >= MAX_BODIES_COUNT {
-                        return Err("Scene exceeds maximum allowed bodies (256)".to_string());
-                    }
-                    scene.add_body(Body {
-                        id: id.clone(),
-                        name: id,
-                        motion: Mru::new(current_x0, current_v),
-                    });
-                    current_x0 = 0.0;
-                    current_v = 0.0;
+                let section = line[1..line.len() - 1].trim();
+                if let Some(draft) = current_draft.take() {
+                    commit_body_draft(&mut scene, draft)?;
                 }
-
                 if let Some(stripped) = section.strip_prefix("body.") {
-                    current_body_id = Some(stripped.to_string());
+                    current_draft = Some(BodyDraft::new(stripped));
                 }
                 continue;
             }
 
             if let Some((key, val)) = line.split_once('=') {
-                let key = key.trim();
-                let val = val.trim().trim_matches('"');
-                match key {
-                    "name" => scene.name = val.to_string(),
-                    "gravity" => {
-                        let g: f64 = val.parse().map_err(|e| format!("Invalid gravity: {}", e))?;
-                        if g.is_nan() || g.is_infinite() {
-                            return Err("Gravity must be finite".to_string());
-                        }
-                        scene.gravity = g;
-                    }
-                    "x0" => {
-                        let x0: f64 = val.parse().map_err(|e| format!("Invalid x0: {}", e))?;
-                        if x0.is_nan() || x0.is_infinite() {
-                            return Err("x0 must be finite".to_string());
-                        }
-                        current_x0 = x0;
-                    }
-                    "v" => {
-                        let v: f64 = val.parse().map_err(|e| format!("Invalid v: {}", e))?;
-                        if v.is_nan() || v.is_infinite() {
-                            return Err("v must be finite".to_string());
-                        }
-                        current_v = v;
-                    }
-                    _ => {} // Unknown keys treated as warnings / ignored per section 5.7
-                }
+                apply_kv_pair(&mut scene, &mut current_draft, key.trim(), val.trim().trim_matches('"'))?;
             }
         }
 
-        if let Some(id) = current_body_id {
-            if scene.bodies.len() >= MAX_BODIES_COUNT {
-                return Err("Scene exceeds maximum allowed bodies (256)".to_string());
-            }
-            scene.add_body(Body {
-                id: id.clone(),
-                name: id,
-                motion: Mru::new(current_x0, current_v),
-            });
+        if let Some(draft) = current_draft {
+            commit_body_draft(&mut scene, draft)?;
         }
 
         Ok(scene)
@@ -105,13 +98,65 @@ impl KinFileStorage {
         for body in &scene.bodies {
             out.push_str(&format!("[body.{}]\n", body.id));
             out.push_str("kind = \"vehicle\"\n");
-            out.push_str("motion = \"mru\"\n");
-            out.push_str(&format!("x0 = {}\n", body.motion.x0));
-            out.push_str(&format!("v = {}\n\n", body.motion.v));
+            match &body.motion {
+                Motion::Mru(m) => {
+                    out.push_str("motion = \"mru\"\n");
+                    out.push_str(&format!("x0 = {}\n", m.x0));
+                    out.push_str(&format!("v = {}\n\n", m.v));
+                }
+                Motion::Mruv(m) => {
+                    out.push_str("motion = \"mruv\"\n");
+                    out.push_str(&format!("x0 = {}\n", m.x0));
+                    out.push_str(&format!("v = {}\n", m.v0));
+                    out.push_str(&format!("a = {}\n\n", m.a));
+                }
+            }
         }
 
         out
     }
+}
+
+fn commit_body_draft(scene: &mut Scene, draft: BodyDraft) -> Result<(), String> {
+    if scene.bodies.len() >= MAX_BODIES_COUNT {
+        return Err("Scene exceeds maximum allowed bodies (256)".to_string());
+    }
+    scene.add_body(draft.into_body());
+    Ok(())
+}
+
+fn apply_kv_pair(
+    scene: &mut Scene,
+    draft: &mut Option<BodyDraft>,
+    key: &str,
+    val: &str,
+) -> Result<(), String> {
+    match key {
+        "name" => scene.name = val.to_string(),
+        "gravity" => scene.gravity = parse_finite_f64(val, "gravity")?,
+        "motion" => {
+            if let Some(d) = draft.as_mut() {
+                d.motion_type = val.to_string();
+            }
+        }
+        "x0" => {
+            if let Some(d) = draft.as_mut() {
+                d.x0 = parse_finite_f64(val, "x0")?;
+            }
+        }
+        "v" | "v0" => {
+            if let Some(d) = draft.as_mut() {
+                d.v = parse_finite_f64(val, "v")?;
+            }
+        }
+        "a" => {
+            if let Some(d) = draft.as_mut() {
+                d.a = parse_finite_f64(val, "a")?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 impl SceneRepository for KinFileStorage {
