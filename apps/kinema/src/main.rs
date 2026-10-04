@@ -8,7 +8,7 @@ use kinema_ports::{ScenarioCatalog, SimulationControl, SnapshotSink};
 
 fn main() {
     println!("=======================================================");
-    println!(" K I N E M A  --  Interactive Physics Workbench (M5)   ");
+    println!(" K I N E M A  --  Interactive Physics Workbench (M6)   ");
     println!("=======================================================");
 
     // Wire application and load canonical M5 Stage A preset (Atwood machine)
@@ -45,6 +45,56 @@ fn main() {
     print_view_model(presenter.model());
 
     println!("\nKINEMA M5 (Rope and Pulleys) verified successfully.");
+
+    // M6 Polish & Delivery Showcase:
+    println!("\n=======================================================");
+    println!(" K I N E M A  --  M6 Polish, Themes & Export Delivery ");
+    println!("=======================================================");
+
+    // 1. Theme switching: Classic -> Phosphor -> Amber
+    println!("\n[1] Theme Switching:");
+    println!(" -> Active Theme: {:?}", presenter.theme());
+    presenter.set_theme(kinema_adapter_ui::UiTheme::Phosphor);
+    println!(" -> Switched to Phosphor: Primary Text Hex = {}", presenter.model().palette.text_primary);
+    presenter.set_theme(kinema_adapter_ui::UiTheme::Amber);
+    println!(" -> Switched to Amber: Primary Text Hex = {}", presenter.model().palette.text_primary);
+
+    // 2. Help System & Dialogs:
+    println!("\n[2] Help System & Dialogs:");
+    presenter.open_help(kinema_adapter_ui::HelpTopic::Contents);
+    if let Some(txt) = &presenter.model().help_text {
+        println!(" -> Opened [Help Contents]: {} lines of guidance", txt.lines().count());
+    }
+    presenter.open_help(kinema_adapter_ui::HelpTopic::EquationReference);
+    if presenter.model().help_text.is_some() {
+        println!(" -> Opened [Equation Reference]: Physics reference ready");
+    }
+    presenter.close_help();
+
+    // 3. Menu Bar Hierarchy:
+    println!("\n[3] Menu Bar Hierarchy:");
+    for menu in &presenter.model().menus {
+        println!(" -> Menu [{}] ({} items)", menu.title, menu.items.len());
+    }
+
+    // 4. Pure-Rust Zero-Dependency PNG Export:
+    println!("\n[4] Canvas PNG Export with Cooperative Cancellation:");
+    use kinema_ports::ImageExporter;
+    let exporter = kinema_adapter_storage::PngCanvasExporter::new(640, 480);
+    let export_path = std::env::temp_dir().join("kinema_main_export.png");
+    let export_str = export_path.to_str().unwrap();
+    let token = kinema_ports::CancellationToken::new();
+
+    match exporter.export_png(service.scene(), service.current_time(), export_str, &token) {
+        Ok(()) => {
+            let size = std::fs::metadata(&export_path).map(|m| m.len()).unwrap_or(0);
+            println!(" -> Exported canvas to {} ({} bytes)", export_str, size);
+            let _ = std::fs::remove_file(&export_path);
+        }
+        Err(e) => println!(" -> Export failed: {}", e),
+    }
+
+    println!("\nKINEMA M6 (Polish and Delivery) fully operational.");
 }
 
 fn print_markers(model: &UiViewModel) {

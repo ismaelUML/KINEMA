@@ -390,3 +390,121 @@ fn test_m5_end_to_end_acceptance() {
     assert!(service.undo());
     assert!(service.redo());
 }
+
+#[test]
+fn test_m6_end_to_end_acceptance() {
+    use kinema_adapter_storage::PngCanvasExporter;
+    use kinema_adapter_ui::{HelpTopic, UiTheme};
+    use kinema_ports::{CancellationToken, ImageExporter, ScenarioCatalog, SimulationControl, SnapshotSink};
+    use std::fs;
+
+    let empty = Scene::new("Empty");
+    let mut service = SimulationService::new(empty);
+    let mut presenter = UiPresenter::new();
+
+    // 1. Scenario Catalog Completeness
+    let catalog = service.list_scenarios();
+    assert!(catalog.contains(&"two_cars_mru".to_string()));
+    assert!(catalog.contains(&"two_cars_mruv".to_string()));
+    assert!(catalog.contains(&"parallel_cars".to_string()));
+    assert!(catalog.contains(&"coinciding_cars".to_string()));
+    assert!(catalog.contains(&"20m_free_fall".to_string()));
+    assert!(catalog.contains(&"feather_and_hammer_moon".to_string()));
+    assert!(catalog.contains(&"vertical_projectile".to_string()));
+    assert!(catalog.contains(&"block_friction_threshold".to_string()));
+    assert!(catalog.contains(&"incline_plane_slide".to_string()));
+    assert!(catalog.contains(&"heavy_crate_push".to_string()));
+    assert!(catalog.contains(&"atwood_machine".to_string()));
+    assert!(catalog.contains(&"table_pulley_friction".to_string()));
+    assert!(catalog.contains(&"hanging_catenary_rope".to_string()));
+    assert!(catalog.contains(&"rope_surface_friction".to_string()));
+
+    // Load active scenario for UI & Export test
+    service
+        .load_scenario("atwood_machine")
+        .expect("Load scenario must succeed");
+    service.seek(1.5);
+    presenter.consume_snapshot(service.scene(), service.current_time());
+
+    // 2. Themes & Palette Switching
+    assert_eq!(presenter.theme(), UiTheme::Classic);
+    assert_eq!(presenter.model().palette.title_bg, "#000080");
+    assert_eq!(presenter.model().palette.window_face, "#C0C0C0");
+
+    presenter.set_theme(UiTheme::Phosphor);
+    assert_eq!(presenter.theme(), UiTheme::Phosphor);
+    assert_eq!(presenter.model().palette.text_primary, "#33FF33");
+    assert_eq!(presenter.model().palette.window_face, "#000000");
+
+    presenter.set_theme(UiTheme::Amber);
+    assert_eq!(presenter.theme(), UiTheme::Amber);
+    assert_eq!(presenter.model().palette.text_primary, "#FFB000");
+    assert_eq!(presenter.model().palette.window_face, "#000000");
+
+    // 3. Help System & Dialogs
+    presenter.open_help(HelpTopic::Contents);
+    assert!(presenter.model().help_dialog_open);
+    assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::Contents));
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("Keyboard Shortcuts"));
+
+    presenter.open_help(HelpTopic::EquationReference);
+    assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::EquationReference));
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("M1 - MRU"));
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("M5 - Atwood Machine"));
+
+    presenter.open_help(HelpTopic::About);
+    assert_eq!(presenter.model().current_help_topic, Some(HelpTopic::About));
+    assert!(presenter.model().help_text.as_ref().unwrap().contains("Old but functional"));
+
+    presenter.close_help();
+    assert!(!presenter.model().help_dialog_open);
+    assert!(presenter.model().help_text.is_none());
+
+    // 4. Menu Tree Structure
+    let menus = &presenter.model().menus;
+    let root_titles: Vec<&str> = menus.iter().map(|item| item.title.as_str()).collect();
+    assert_eq!(
+        root_titles,
+        vec!["File", "Edit", "View", "Simulate", "Scene", "Help"]
+    );
+    let file_menu = &menus[0];
+    let file_actions: Vec<&str> = file_menu.items.iter().map(|item| item.action_id.as_str()).collect();
+    assert!(file_actions.contains(&"file.new"));
+    assert!(file_actions.contains(&"file.open"));
+    assert!(file_actions.contains(&"file.save"));
+    assert!(file_actions.contains(&"file.export_png"));
+
+    // 5. Canvas PNG Export & Verification
+    let exporter = PngCanvasExporter::new(640, 480);
+    let export_path = std::env::temp_dir().join("kinema_m6_acceptance.png");
+    let export_str = export_path.to_str().unwrap();
+    let token = CancellationToken::new();
+
+    let export_res = exporter.export_png(service.scene(), service.current_time(), export_str, &token);
+    assert!(export_res.is_ok(), "PNG export failed: {:?}", export_res);
+
+    let png_bytes = fs::read(&export_path).expect("read exported PNG file");
+    assert!(png_bytes.len() > 100);
+    assert_eq!(&png_bytes[0..8], &[137, 80, 78, 71, 13, 10, 26, 10]); // Magic signature
+    assert_eq!(&png_bytes[12..16], b"IHDR");
+    let w = u32::from_be_bytes(png_bytes[16..20].try_into().unwrap());
+    let h = u32::from_be_bytes(png_bytes[20..24].try_into().unwrap());
+    assert_eq!(w, 640);
+    assert_eq!(h, 480);
+    let len = png_bytes.len();
+    assert_eq!(&png_bytes[len - 8..len - 4], b"IEND");
+
+    let _ = fs::remove_file(&export_path);
+
+    // 6. Cooperative Cancellation & Rollback
+    let cancel_path = std::env::temp_dir().join("kinema_m6_cancelled.png");
+    let cancel_str = cancel_path.to_str().unwrap();
+    let cancel_token = CancellationToken::new();
+    cancel_token.cancel();
+
+    let cancel_res = exporter.export_png(service.scene(), service.current_time(), cancel_str, &cancel_token);
+    assert!(cancel_res.is_err());
+    assert_eq!(cancel_res.unwrap_err(), "Export cancelled by user");
+    assert!(!cancel_path.exists(), "Cancelled file must be removed");
+}
+

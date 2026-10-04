@@ -320,6 +320,10 @@ impl UiPresenter {
         self.model.active_graph_kind = kind;
     }
 
+    pub fn theme(&self) -> UiTheme {
+        self.theme
+    }
+
     pub fn set_theme(&mut self, theme: UiTheme) {
         self.theme = theme;
         self.model.active_theme = theme;
