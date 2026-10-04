@@ -1,7 +1,8 @@
 //! Application Layer / Use Case Orchestration.
 
 use kinema_domain::{
-    analyze_meeting, Body, MeetingOutcome, Motion, Motion1D, Mru, Mruv, ParametricLaw, Scene,
+    analyze_meeting, Body, GravityPreset, MeetingOutcome, Motion, Motion1D, Mru, Mruv, Mvl,
+    ParametricLaw, Scene,
 };
 use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
 
@@ -82,6 +83,32 @@ impl SimulationService {
                 b.motion
                     .stopping_time()
                     .map(|ts| (b.id.clone(), ts, b.motion.position_at(ts)))
+            })
+            .collect()
+    }
+
+    /// Finds all bodies with an apex instant (t_up, h_max) under vertical projectile motion.
+    pub fn find_apex_instants(&self) -> Vec<(String, f64, f64)> {
+        self.scene
+            .bodies
+            .iter()
+            .filter_map(|b| {
+                b.motion
+                    .apex()
+                    .map(|(t_up, h_max)| (b.id.clone(), t_up, h_max))
+            })
+            .collect()
+    }
+
+    /// Finds all bodies with a ground impact instant (t_impact, |v_impact|) at y = 0.
+    pub fn find_ground_impacts(&self) -> Vec<(String, f64, f64)> {
+        self.scene
+            .bodies
+            .iter()
+            .filter_map(|b| {
+                b.motion
+                    .ground_impact()
+                    .map(|(t_i, v_i)| (b.id.clone(), t_i, v_i))
             })
             .collect()
     }
@@ -222,6 +249,9 @@ impl ScenarioCatalog for SimulationService {
             "two_cars_mruv".to_string(),
             "parallel_cars".to_string(),
             "coinciding_cars".to_string(),
+            "20m_free_fall".to_string(),
+            "feather_and_hammer_moon".to_string(),
+            "vertical_projectile".to_string(),
         ]
     }
 
@@ -231,6 +261,13 @@ impl ScenarioCatalog for SimulationService {
             "two_cars_mruv" | "Two cars meeting (MRU vs MRUV)" => build_two_cars_mruv_scenario(),
             "parallel_cars" => build_parallel_scenario(),
             "coinciding_cars" => build_coinciding_scenario(),
+            "20m_free_fall" | "Free fall 20m drop (Earth)" => build_20m_free_fall_scenario(),
+            "feather_and_hammer_moon" | "Feather and Hammer (Moon)" => {
+                build_feather_hammer_scenario()
+            }
+            "vertical_projectile" | "Vertical projectile launch (Earth)" => {
+                build_vertical_projectile_scenario()
+            }
             _ => return Err(format!("Unknown scenario '{}'", name)),
         };
         self.push_undo();
@@ -277,5 +314,46 @@ fn build_coinciding_scenario() -> Scene {
     let mut scene = Scene::new("Coinciding cars");
     scene.add_body(Body::new("car_a", "Car A", Mru::new(25.0, 10.0)));
     scene.add_body(Body::new("car_b", "Car B", Mru::new(25.0, 10.0)));
+    scene
+}
+
+fn build_20m_free_fall_scenario() -> Scene {
+    let mut scene = Scene::new("Free fall 20m drop (Earth)");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    scene.add_body(Body::new(
+        "ball",
+        "Dropping Ball (20m)",
+        Mvl::new(20.0, 0.0, g),
+    ));
+    scene
+}
+
+fn build_feather_hammer_scenario() -> Scene {
+    let mut scene = Scene::new("Feather and Hammer (Moon)");
+    let g = GravityPreset::MOON;
+    scene.gravity = g;
+    scene.add_body(Body::new(
+        "hammer",
+        "Geological Hammer",
+        Mvl::new(1.62, 0.0, g),
+    ));
+    scene.add_body(Body::new(
+        "feather",
+        "Falcon Feather",
+        Mvl::new(1.62, 0.0, g),
+    ));
+    scene
+}
+
+fn build_vertical_projectile_scenario() -> Scene {
+    let mut scene = Scene::new("Vertical projectile launch (Earth)");
+    let g = GravityPreset::EARTH_STANDARD;
+    scene.gravity = g;
+    scene.add_body(Body::new(
+        "rock",
+        "Launched Rock (v0=20 m/s)",
+        Mvl::new(0.0, 20.0, g),
+    ));
     scene
 }

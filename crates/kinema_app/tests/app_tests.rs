@@ -145,3 +145,82 @@ fn test_sample_trajectory_points() {
 
     assert!(service.sample_trajectory("unknown", 0.0, 1.0, 5).is_err());
 }
+
+#[test]
+fn test_m3_20m_free_fall_acceptance_criteria() {
+    use kinema_ports::ScenarioCatalog;
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("20m_free_fall")
+        .expect("load 20m drop");
+
+    let impacts = service.find_ground_impacts();
+    assert_eq!(impacts.len(), 1);
+    let (id, t_impact, v_impact) = &impacts[0];
+    assert_eq!(id, "ball");
+    // t_i = sqrt(2 * 20 / 9.81) = sqrt(4.07747) = 2.01927 s
+    assert!((t_impact - 2.01927).abs() < 1e-4);
+    // |v_i| = sqrt(2 * 9.81 * 20) = 19.809 m/s
+    assert!((v_impact - 19.809).abs() < 1e-3);
+
+    // No upward apex when dropped with v0 = 0
+    let apexes = service.find_apex_instants();
+    assert!(apexes.is_empty());
+}
+
+#[test]
+fn test_m3_feather_and_hammer_moon_simultaneous_fall() {
+    use kinema_ports::ScenarioCatalog;
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("feather_and_hammer_moon")
+        .expect("load moon scenario");
+
+    let impacts = service.find_ground_impacts();
+    assert_eq!(impacts.len(), 2);
+    // Both hit the lunar surface at t = sqrt(2 * 1.62 / 1.62) = sqrt(2) ≈ 1.4142 s
+    let expected_t = (2.0_f64).sqrt();
+    for (_id, t_i, _v_i) in &impacts {
+        assert!((t_i - expected_t).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn test_m3_vertical_projectile_apex_and_curves() {
+    use kinema_app::CurveType;
+    use kinema_ports::ScenarioCatalog;
+
+    let scene = Scene::new("Empty");
+    let mut service = SimulationService::new(scene);
+    service
+        .load_scenario("vertical_projectile")
+        .expect("load vertical projectile");
+
+    let apexes = service.find_apex_instants();
+    assert_eq!(apexes.len(), 1);
+    let (id, t_up, h_max) = &apexes[0];
+    assert_eq!(id, "rock");
+    // t_up = 20 / 9.81 ≈ 2.03874 s
+    assert!((t_up - (20.0 / 9.81)).abs() < 1e-4);
+    // h_max = 20^2 / (2 * 9.81) ≈ 20.38736 m
+    assert!((h_max - (400.0 / 19.62)).abs() < 1e-4);
+
+    let impacts = service.find_ground_impacts();
+    assert_eq!(impacts.len(), 1);
+    let (_, t_impact, v_impact) = &impacts[0];
+    // Symmetrical flight: total air time is 2 * t_up
+    assert!((t_impact - (40.0 / 9.81)).abs() < 1e-4);
+    // Impact speed equals launch speed in vacuum
+    assert!((v_impact - 20.0).abs() < 1e-4);
+
+    // Verify velocity curve: v(0) = 20, v(t_up) ≈ 0
+    let v_curve = service
+        .sample_curve("rock", CurveType::Velocity, 0.0, *t_up, 2)
+        .expect("sample v curve");
+    assert!((v_curve.points[0].position - 20.0).abs() < 1e-6);
+    assert!(v_curve.points[1].position.abs() < 1e-3);
+}
