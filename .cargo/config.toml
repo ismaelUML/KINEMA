@@ -1,0 +1,3 @@
+# Passes Qt MinGW libraries to the linker for Windows GNU target.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-L", "C:\\Qt\\Tools\\mingw1310_64\\x86_64-w64-mingw32\\lib"]

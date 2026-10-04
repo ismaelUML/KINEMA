@@ -6,7 +6,19 @@ use kinema_app::SimulationService;
 use kinema_domain::Scene;
 use kinema_ports::{ScenarioCatalog, SimulationControl, SnapshotSink};
 
+pub mod gui;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--cli" || a == "--batch") {
+        run_cli_workbench();
+    } else if let Err(e) = gui::run_gui() {
+        eprintln!("Error launching GUI window: {}", e);
+        run_cli_workbench();
+    }
+}
+
+fn run_cli_workbench() {
     println!("=======================================================");
     println!(" K I N E M A  --  Interactive Physics Workbench (M6)   ");
     println!("=======================================================");
