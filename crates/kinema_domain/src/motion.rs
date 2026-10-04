@@ -326,6 +326,25 @@ impl Motion {
             Motion::Mvl(m) => m.time_to_apex(),
         }
     }
+
+    /// Free vertical motion apex instant (time_to_apex, max_height) if upward launch exists.
+    pub fn apex(&self) -> Option<(f64, f64)> {
+        match self {
+            Motion::Mvl(m) => m.time_to_apex().map(|t| (t, m.max_height())),
+            _ => None,
+        }
+    }
+
+    /// Free vertical motion ground impact instant (impact_time, impact_speed).
+    pub fn ground_impact(&self) -> Option<(f64, f64)> {
+        match self {
+            Motion::Mvl(m) => match (m.impact_instant(), m.impact_speed()) {
+                (Some(t), Some(v)) => Some((t, v)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 impl Motion1D for Motion {
