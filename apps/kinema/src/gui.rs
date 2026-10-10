@@ -359,6 +359,8 @@ impl KinemaGuiApp {
             ui.separator();
             ui.heading(format!("t = {:.3} s", self.service.current_time()));
 
+            render_zoom_toolbar_controls(ui, &mut self.canvas_zoom, &mut self.canvas_pan_x);
+
             ui.separator();
             ui.label("Theme:");
             if ui
@@ -417,15 +419,14 @@ impl KinemaGuiApp {
         ui.label(egui::RichText::new("BODIES IN MOTION").strong());
         let bodies = self.presenter.model().bodies.clone();
 
-        for body in bodies {
-            ui.group(|ui| {
-                ui.label(egui::RichText::new(&body.name).strong());
-                ui.monospace(&body.formula_text);
-                ui.label(format!(
-                    "x = {:.2} m  |  v = {:.2} m/s  |  a = {:.2} m/s²",
-                    body.current_position, body.current_velocity, body.current_acceleration
-                ));
-            });
+        for body in &bodies {
+            render_body_card(
+                ui,
+                &mut self.service,
+                &mut self.presenter,
+                &mut self.status_text,
+                body,
+            );
         }
     }
 
@@ -512,41 +513,18 @@ impl KinemaGuiApp {
         };
         painter.rect_filled(rect, egui::CornerRadius::ZERO, bg_color);
 
-        // Handle panning with mouse drag
-        if response.dragged() {
-            self.canvas_pan_x += response.drag_delta().x;
-        }
+        handle_canvas_pan_and_zoom(
+            &response,
+            ui,
+            &mut self.canvas_pan_x,
+            &mut self.canvas_zoom,
+            rect,
+        );
 
         let ground_y = rect.max.y - 45.0;
         let origin_x = rect.min.x + self.canvas_pan_x;
 
-        // Draw metric track and ticks
-        let track_color = Color32::from_rgb(80, 95, 115);
-        painter.line_segment(
-            [
-                Pos2::new(rect.min.x, ground_y),
-                Pos2::new(rect.max.x, ground_y),
-            ],
-            Stroke::new(2.0, track_color),
-        );
-
-        let tick_spacing = 25.0 * self.canvas_zoom;
-        for i in -20..60 {
-            let tx = origin_x + (i as f32 * tick_spacing);
-            if tx >= rect.min.x && tx <= rect.max.x {
-                painter.line_segment(
-                    [Pos2::new(tx, ground_y - 6.0), Pos2::new(tx, ground_y + 6.0)],
-                    Stroke::new(1.0, Color32::from_rgb(90, 105, 130)),
-                );
-                painter.text(
-                    Pos2::new(tx, ground_y + 12.0),
-                    egui::Align2::CENTER_TOP,
-                    format!("{}m", i * 25),
-                    egui::FontId::monospace(10.0),
-                    Color32::from_rgb(160, 175, 195),
-                );
-            }
-        }
+        draw_metric_track(&painter, rect, origin_x, ground_y, self.canvas_zoom);
 
         // Draw bodies
         let ctx = PaintContext {
@@ -1469,6 +1447,168 @@ fn parse_hex_color(hex: &str) -> Color32 {
     let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(255);
     let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255);
     Color32::from_rgb(r, g, b)
+}
+
+fn render_zoom_toolbar_controls(ui: &mut egui::Ui, zoom: &mut f32, pan_x: &mut f32) {
+    ui.separator();
+    ui.label("Zoom:");
+    if ui
+        .button(" - ")
+        .on_hover_text("Zoom out (Mouse wheel down)")
+        .clicked()
+    {
+        *zoom = (*zoom * 0.8).clamp(0.5, 40.0);
+    }
+    ui.label(format!("{:.1}x", *zoom / 6.0));
+    if ui
+        .button(" + ")
+        .on_hover_text("Zoom in (Mouse wheel up)")
+        .clicked()
+    {
+        *zoom = (*zoom * 1.25).clamp(0.5, 40.0);
+    }
+    if ui.button("1:1").on_hover_text("Reset zoom and pan").clicked() {
+        *zoom = 6.0;
+        *pan_x = 60.0;
+    }
+}
+
+fn handle_canvas_pan_and_zoom(
+    response: &egui::Response,
+    ui: &egui::Ui,
+    pan_x: &mut f32,
+    zoom: &mut f32,
+    rect: Rect,
+) {
+    if response.dragged() {
+        *pan_x += response.drag_delta().x;
+    }
+    if response.hovered() {
+        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+        if scroll.abs() > 0.1 {
+            let mult = (scroll * 0.002).exp();
+            let mouse_x = ui
+                .input(|i| i.pointer.hover_pos())
+                .map(|p| p.x)
+                .unwrap_or(rect.center().x);
+            let rel_x = mouse_x - (rect.min.x + *pan_x);
+            *pan_x -= rel_x * (mult - 1.0);
+            *zoom = (*zoom * mult).clamp(0.5, 40.0);
+        }
+    }
+}
+
+fn draw_metric_track(
+    painter: &egui::Painter,
+    rect: Rect,
+    origin_x: f32,
+    ground_y: f32,
+    zoom: f32,
+) {
+    let track_color = Color32::from_rgb(80, 95, 115);
+    painter.line_segment(
+        [
+            Pos2::new(rect.min.x, ground_y),
+            Pos2::new(rect.max.x, ground_y),
+        ],
+        Stroke::new(2.0, track_color),
+    );
+
+    let tick_spacing = 25.0 * zoom;
+    for i in -20..60 {
+        let tx = origin_x + (i as f32 * tick_spacing);
+        if tx >= rect.min.x && tx <= rect.max.x {
+            painter.line_segment(
+                [Pos2::new(tx, ground_y - 6.0), Pos2::new(tx, ground_y + 6.0)],
+                Stroke::new(1.0, Color32::from_rgb(90, 105, 130)),
+            );
+            painter.text(
+                Pos2::new(tx, ground_y + 12.0),
+                egui::Align2::CENTER_TOP,
+                format!("{}m", i * 25),
+                egui::FontId::monospace(10.0),
+                Color32::from_rgb(160, 175, 195),
+            );
+        }
+    }
+}
+
+fn make_param_drag_value<'a>(name: &str, val: &'a mut f64) -> egui::DragValue<'a> {
+    match name {
+        "mass" | "m1" | "m2" => {
+            egui::DragValue::new(val).range(0.05..=10000.0).speed(0.1).suffix(" kg")
+        }
+        "mu_s" | "mu_k" => egui::DragValue::new(val).range(0.0..=2.0).speed(0.01),
+        "theta_deg" => egui::DragValue::new(val).range(0.0..=89.0).speed(0.5).suffix("°"),
+        "f_app" => {
+            egui::DragValue::new(val).range(-5000.0..=5000.0).speed(1.0).suffix(" N")
+        }
+        "g" | "gravity" => {
+            egui::DragValue::new(val).range(0.0..=100.0).speed(0.1).suffix(" m/s²")
+        }
+        "x0" | "y0" | "s0" => {
+            egui::DragValue::new(val).range(-2000.0..=2000.0).speed(0.5).suffix(" m")
+        }
+        "v" | "v0" => {
+            egui::DragValue::new(val).range(-500.0..=500.0).speed(0.5).suffix(" m/s")
+        }
+        "a" => egui::DragValue::new(val).range(-100.0..=100.0).speed(0.1).suffix(" m/s²"),
+        _ => egui::DragValue::new(val).speed(0.1),
+    }
+}
+
+fn render_single_param_row(
+    ui: &mut egui::Ui,
+    service: &mut SimulationService,
+    presenter: &mut UiPresenter,
+    status_text: &mut String,
+    body_id: &str,
+    name: &str,
+    value: f64,
+) {
+    ui.horizontal(|ui| {
+        ui.label(format!("{}:", name));
+        let mut val = value;
+        let drag = make_param_drag_value(name, &mut val);
+        if ui.add(drag).changed() {
+            if let Ok(()) = service.edit_parameter(body_id, name, val) {
+                presenter.consume_snapshot(service.scene(), service.current_time());
+                *status_text = format!("Set {} of '{}' to {:.2}", name, body_id, val);
+            }
+        }
+    });
+}
+
+fn render_body_card(
+    ui: &mut egui::Ui,
+    service: &mut SimulationService,
+    presenter: &mut UiPresenter,
+    status_text: &mut String,
+    body: &kinema_adapter_ui::UiBodyView,
+) {
+    ui.group(|ui| {
+        ui.label(egui::RichText::new(&body.name).strong());
+        ui.monospace(&body.formula_text);
+        ui.label(format!(
+            "x = {:.2} m  |  v = {:.2} m/s  |  a = {:.2} m/s²",
+            body.current_position, body.current_velocity, body.current_acceleration
+        ));
+        if !body.parameters.is_empty() {
+            ui.separator();
+            ui.label(egui::RichText::new("Parameters (Drag / Click to edit):").small());
+            for (p_name, p_val) in &body.parameters {
+                render_single_param_row(
+                    ui,
+                    service,
+                    presenter,
+                    status_text,
+                    &body.id,
+                    p_name,
+                    *p_val,
+                );
+            }
+        }
+    });
 }
 
 pub fn run_gui() -> Result<(), eframe::Error> {

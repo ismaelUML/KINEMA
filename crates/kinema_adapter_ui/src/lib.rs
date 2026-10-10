@@ -28,6 +28,7 @@ pub struct UiBodyView {
     pub current_acceleration: f64,
     pub formula_text: String,
     pub stopping_time: Option<f64>,
+    pub parameters: Vec<(String, f64)>,
 }
 
 /// Meeting marker rendered on the timeline and graphs.
@@ -386,6 +387,12 @@ fn build_body_views(bodies: &[Body], current_time: f64) -> Vec<UiBodyView> {
             current_acceleration: b.motion.acceleration_at(current_time),
             formula_text: b.motion.formula_text(),
             stopping_time: b.motion.stopping_time(),
+            parameters: b
+                .motion
+                .parameters()
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
         })
         .collect()
 }
