@@ -28,12 +28,34 @@ impl KinemaGuiApp {
         }
 
         let cart_color = match index % 3 {
-            0 => Color32::from_rgb(64, 200, 255),
-            1 => Color32::from_rgb(255, 180, 50),
-            _ => Color32::from_rgb(100, 240, 140),
+            0 => Color32::from_rgb(0, 229, 255),  // Laser cyan
+            1 => Color32::from_rgb(255, 176, 32), // High-vis amber
+            _ => Color32::from_rgb(255, 61, 203), // Telemetry magenta
         };
 
-        let chassis_rect = Rect::from_min_size(Pos2::new(px, py + 6.0), Vec2::new(42.0, 14.0));
+        let is_selected = self.selected_body_id.as_deref() == Some(&body.id);
+        self.paint_vehicle_chassis(
+            ctx,
+            Pos2::new(px, py),
+            car_base_y,
+            cart_color,
+            &body.name,
+            is_selected,
+        );
+        self.paint_vehicle_telemetry(ctx, px, py, body, cart_color);
+    }
+
+    fn paint_vehicle_chassis(
+        &self,
+        ctx: &PaintContext<'_>,
+        pos: Pos2,
+        car_base_y: f32,
+        cart_color: Color32,
+        name: &str,
+        is_selected: bool,
+    ) {
+        let chassis_rect =
+            Rect::from_min_size(Pos2::new(pos.x, pos.y + 6.0), Vec2::new(42.0, 14.0));
         ctx.painter.rect(
             chassis_rect,
             egui::CornerRadius::same(3),
@@ -42,7 +64,18 @@ impl KinemaGuiApp {
             egui::StrokeKind::Inside,
         );
 
-        let cabin_rect = Rect::from_min_size(Pos2::new(px + 10.0, py), Vec2::new(20.0, 8.0));
+        if is_selected {
+            let focus_rect = chassis_rect.expand(4.0);
+            ctx.painter.rect_stroke(
+                focus_rect,
+                egui::CornerRadius::same(5),
+                Stroke::new(1.5, Color32::from_rgb(0, 229, 255)),
+                egui::StrokeKind::Outside,
+            );
+        }
+
+        let cabin_rect =
+            Rect::from_min_size(Pos2::new(pos.x + 10.0, pos.y), Vec2::new(20.0, 8.0));
         ctx.painter.rect(
             cabin_rect,
             egui::CornerRadius::same(2),
@@ -51,23 +84,58 @@ impl KinemaGuiApp {
             egui::StrokeKind::Inside,
         );
 
-        self.paint_wheel(ctx.painter, px + 8.0, car_base_y - 2.0);
-        self.paint_wheel(ctx.painter, px + 34.0, car_base_y - 2.0);
+        self.paint_wheel(ctx.painter, pos.x + 8.0, car_base_y - 2.0);
+        self.paint_wheel(ctx.painter, pos.x + 34.0, car_base_y - 2.0);
 
         ctx.painter.text(
-            Pos2::new(px + 21.0, py - 6.0),
+            Pos2::new(pos.x + 21.0, pos.y - 6.0),
             egui::Align2::CENTER_BOTTOM,
-            &body.name,
+            name,
             egui::FontId::monospace(11.0),
             Color32::WHITE,
         );
+    }
 
+    fn paint_vehicle_telemetry(
+        &self,
+        ctx: &PaintContext<'_>,
+        px: f32,
+        py: f32,
+        body: &kinema_adapter_ui::UiBodyView,
+        cart_color: Color32,
+    ) {
         if body.current_velocity.abs() > 0.05 {
-            let arrow_len = (body.current_velocity as f32 * 2.0).clamp(-50.0, 50.0);
+            let arrow_len = (body.current_velocity as f32 * 2.5).clamp(-65.0, 65.0);
             let p_start = Pos2::new(px + 21.0, py + 12.0);
             let p_end = Pos2::new(px + 21.0 + arrow_len, py + 12.0);
-            ctx.painter
-                .line_segment([p_start, p_end], Stroke::new(2.0, Color32::YELLOW));
+            let v_badge = format!("{:.1}m/s", body.current_velocity);
+            super::primitives::draw_laser_vector(
+                ctx.painter,
+                p_start,
+                p_end,
+                Color32::from_rgb(0, 229, 255),
+                Some(&v_badge),
+            );
+        }
+
+        if self.presenter.theme() == kinema_adapter_ui::UiTheme::Telemetry {
+            let state_label = if body.current_velocity.abs() < 0.01 {
+                "REST"
+            } else if body.current_acceleration > 0.05 {
+                "ACCEL"
+            } else if body.current_acceleration < -0.05 {
+                "BRAKE"
+            } else {
+                "CRUISE"
+            };
+            super::primitives::draw_telemetry_hud(
+                ctx.painter,
+                Pos2::new(px + 21.0, py - 4.0),
+                body.current_velocity,
+                body.current_acceleration,
+                state_label,
+                cart_color,
+            );
         }
     }
 
@@ -293,120 +361,136 @@ impl KinemaGuiApp {
             return;
         }
 
-        let crate_rect = Rect::from_min_size(Pos2::new(px, py), Vec2::new(crate_w, crate_h));
-        ctx.painter.rect_filled(
-            crate_rect,
-            egui::CornerRadius::ZERO,
-            Color32::from_rgb(160, 110, 55),
+        paint_crate_body(ctx.painter, px, py, crate_w, crate_h);
+        paint_crate_forces(
+            ctx.painter,
+            Pos2::new(px, py),
+            Vec2::new(crate_w, crate_h),
+            ctx.ground_y,
+            params,
+            body.current_velocity,
         );
-        ctx.painter.line_segment(
-            [Pos2::new(px, py), Pos2::new(px + crate_w, py + crate_h)],
-            Stroke::new(2.0, Color32::from_rgb(120, 80, 40)),
-        );
-        ctx.painter.line_segment(
-            [Pos2::new(px, py + crate_h), Pos2::new(px + crate_w, py)],
-            Stroke::new(2.0, Color32::from_rgb(120, 80, 40)),
-        );
-        ctx.painter.rect_stroke(
-            crate_rect,
-            egui::CornerRadius::ZERO,
-            Stroke::new(2.0, Color32::from_rgb(60, 45, 30)),
-            egui::StrokeKind::Inside,
-        );
+        paint_crate_status(ctx.painter, px + crate_w * 0.5, py, params);
+    }
+}
 
-        let center_x = px + crate_w * 0.5;
-        let center_y = py + crate_h * 0.5;
+fn paint_crate_body(painter: &egui::Painter, px: f32, py: f32, crate_w: f32, crate_h: f32) {
+    let crate_rect = Rect::from_min_size(Pos2::new(px, py), Vec2::new(crate_w, crate_h));
+    painter.rect_filled(
+        crate_rect,
+        egui::CornerRadius::ZERO,
+        Color32::from_rgb(160, 110, 55),
+    );
+    painter.line_segment(
+        [Pos2::new(px, py), Pos2::new(px + crate_w, py + crate_h)],
+        Stroke::new(2.0, Color32::from_rgb(120, 80, 40)),
+    );
+    painter.line_segment(
+        [Pos2::new(px, py + crate_h), Pos2::new(px + crate_w, py)],
+        Stroke::new(2.0, Color32::from_rgb(120, 80, 40)),
+    );
+    painter.rect_stroke(
+        crate_rect,
+        egui::CornerRadius::ZERO,
+        Stroke::new(2.0, Color32::from_rgb(60, 45, 30)),
+        egui::StrokeKind::Inside,
+    );
+}
 
-        // Weight W = mg
-        ctx.painter.line_segment(
-            [
-                Pos2::new(center_x, center_y),
-                Pos2::new(center_x, center_y + 35.0),
-            ],
-            Stroke::new(2.0, Color32::from_rgb(255, 60, 60)),
-        );
-        ctx.painter.text(
-            Pos2::new(center_x, center_y + 37.0),
-            egui::Align2::CENTER_TOP,
-            "W",
-            egui::FontId::monospace(9.0),
-            Color32::from_rgb(255, 80, 80),
-        );
+fn paint_crate_forces(
+    painter: &egui::Painter,
+    pos: Pos2,
+    size: Vec2,
+    ground_y: f32,
+    params: FrictionParams,
+    velocity: f64,
+) {
+    let center_x = pos.x + size.x * 0.5;
+    let center_y = pos.y + size.y * 0.5;
 
-        // Normal force N
-        ctx.painter.line_segment(
-            [
-                Pos2::new(center_x, center_y),
-                Pos2::new(center_x, center_y - 35.0),
-            ],
-            Stroke::new(2.0, Color32::from_rgb(60, 180, 255)),
-        );
-        ctx.painter.text(
-            Pos2::new(center_x, center_y - 37.0),
-            egui::Align2::CENTER_BOTTOM,
-            "N",
-            egui::FontId::monospace(9.0),
-            Color32::from_rgb(80, 200, 255),
-        );
+    // Weight W = mg
+    let w_text = format!("W={:.0}N", params.mass * 9.81);
+    super::primitives::draw_laser_vector(
+        painter,
+        Pos2::new(center_x, center_y),
+        Pos2::new(center_x, center_y + 36.0),
+        Color32::from_rgb(255, 60, 60),
+        Some(&w_text),
+    );
 
-        // Applied push force F_ext
-        if params.f_app.abs() > 0.1 {
-            let f_len = (params.f_app as f32 * 0.15).clamp(10.0, 50.0);
-            ctx.painter.line_segment(
-                [
-                    Pos2::new(px + crate_w, center_y),
-                    Pos2::new(px + crate_w + f_len, center_y),
-                ],
-                Stroke::new(2.5, Color32::from_rgb(60, 230, 80)),
-            );
-            ctx.painter.text(
-                Pos2::new(px + crate_w + f_len + 4.0, center_y),
-                egui::Align2::LEFT_CENTER,
-                format!("{:.0}N", params.f_app),
-                egui::FontId::monospace(9.0),
-                Color32::from_rgb(80, 240, 100),
-            );
-        }
+    // Normal force N
+    let n_text = format!("N={:.0}N", params.mass * 9.81);
+    super::primitives::draw_laser_vector(
+        painter,
+        Pos2::new(center_x, center_y),
+        Pos2::new(center_x, center_y - 36.0),
+        Color32::from_rgb(0, 229, 255),
+        Some(&n_text),
+    );
 
-        // Friction force f_r
-        if body.current_velocity.abs() > 0.05 || params.f_app > 0.0 {
-            ctx.painter.line_segment(
-                [
-                    Pos2::new(px, ctx.ground_y - 2.0),
-                    Pos2::new(px - 25.0, ctx.ground_y - 2.0),
-                ],
-                Stroke::new(2.0, Color32::from_rgb(255, 160, 40)),
-            );
-            ctx.painter.text(
-                Pos2::new(px - 28.0, ctx.ground_y - 2.0),
-                egui::Align2::RIGHT_CENTER,
-                "fr",
-                egui::FontId::monospace(9.0),
-                Color32::from_rgb(255, 180, 60),
-            );
-        }
-
-        let fs_max = params.mu_s * params.mass * 9.81;
-        let is_static = params.f_app <= fs_max;
-        let status_text = if is_static {
-            "STATIC EQUILIBRIUM (F_app <= fs_max | a = 0)"
-        } else {
-            "KINETIC SLIDING (F_app > fs_max | fk = μk·N)"
-        };
-        let status_color = if is_static {
-            Color32::from_rgb(80, 220, 100)
-        } else {
-            Color32::from_rgb(255, 140, 60)
-        };
-
-        ctx.painter.text(
-            Pos2::new(center_x, py - 46.0),
-            egui::Align2::CENTER_BOTTOM,
-            status_text,
-            egui::FontId::monospace(10.0),
-            status_color,
+    // Applied push force F_ext
+    if params.f_app.abs() > 0.1 {
+        let f_len = (params.f_app as f32 * 0.15).clamp(10.0, 50.0);
+        let f_text = format!("{:.0}N", params.f_app);
+        super::primitives::draw_laser_vector(
+            painter,
+            Pos2::new(pos.x + size.x, center_y),
+            Pos2::new(pos.x + size.x + f_len, center_y),
+            Color32::from_rgb(16, 185, 129),
+            Some(&f_text),
         );
     }
+
+    // Friction force f_r & sliding sparks
+    if velocity.abs() > 0.05 || params.f_app > 0.0 {
+        super::primitives::draw_laser_vector(
+            painter,
+            Pos2::new(pos.x, ground_y - 2.0),
+            Pos2::new(pos.x - 32.0, ground_y - 2.0),
+            Color32::from_rgb(255, 176, 32),
+            Some("fr"),
+        );
+        if velocity.abs() > 0.05 {
+            super::primitives::draw_friction_sparks(painter, pos.x, ground_y - 2.0, velocity as f32);
+        }
+    }
+}
+
+fn paint_crate_status(painter: &egui::Painter, center_x: f32, py: f32, params: FrictionParams) {
+    let fs_max = params.mu_s * params.mass * 9.81;
+    let is_static = params.f_app <= fs_max;
+    let (status_text, status_color, badge_bg) = if is_static {
+        (
+            "STATIC (F_app <= fs_max | a = 0)",
+            Color32::from_rgb(16, 185, 129),
+            Color32::from_rgba_unmultiplied(12, 35, 22, 220),
+        )
+    } else {
+        (
+            "SLIDING (F_app > fs_max | fk = μk·N)",
+            Color32::from_rgb(255, 140, 60),
+            Color32::from_rgba_unmultiplied(45, 20, 10, 220),
+        )
+    };
+
+    let badge_rect = Rect::from_center_size(Pos2::new(center_x, py - 38.0), Vec2::new(190.0, 18.0));
+    painter.rect_filled(badge_rect, egui::CornerRadius::same(9), badge_bg);
+    painter.rect_stroke(
+        badge_rect,
+        egui::CornerRadius::same(9),
+        Stroke::new(1.0, status_color),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        badge_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        status_text,
+        egui::FontId::monospace(9.0),
+        status_color,
+    );
+}
+
+impl KinemaGuiApp {
 
     pub(super) fn paint_incline_plane(
         &self,

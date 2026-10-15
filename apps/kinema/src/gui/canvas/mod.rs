@@ -1,4 +1,5 @@
 mod entities;
+pub mod primitives;
 mod ropes;
 
 use super::KinemaGuiApp;
@@ -48,7 +49,9 @@ impl KinemaGuiApp {
             ui.allocate_painter(Vec2::new(ui.available_width(), height), egui::Sense::drag());
 
         let rect = response.rect;
-        let bg_color = match self.presenter.theme() {
+        let theme = self.presenter.theme();
+        let bg_color = match theme {
+            UiTheme::Telemetry => Color32::from_rgb(10, 13, 20),
             UiTheme::Classic => Color32::from_rgb(16, 20, 28),
             UiTheme::Phosphor => Color32::from_rgb(8, 14, 8),
             UiTheme::Amber => Color32::from_rgb(18, 12, 4),
@@ -59,14 +62,18 @@ impl KinemaGuiApp {
             &response,
             ui,
             &mut self.canvas_pan_x,
+            &mut self.canvas_pan_y,
             &mut self.canvas_zoom,
             rect,
         );
 
-        let ground_y = rect.max.y - 45.0;
+        let ground_y = rect.max.y - 45.0 + self.canvas_pan_y;
         let origin_x = rect.min.x + self.canvas_pan_x;
 
-        draw_metric_track(&painter, rect, origin_x, ground_y, self.canvas_zoom);
+        if theme == UiTheme::Telemetry {
+            draw_telemetry_optical_grid(&painter, rect, origin_x, ground_y, self.canvas_zoom);
+        }
+        draw_metric_track(&painter, rect, origin_x, ground_y, self.canvas_zoom, theme);
 
         // Draw bodies
         let ctx = PaintContext {
@@ -93,13 +100,40 @@ impl KinemaGuiApp {
         let model = self.presenter.model();
         for m in &model.meeting_markers {
             let mx = ctx.origin_x + (m.position as f32 * ctx.zoom);
-            if mx >= ctx.rect.min.x && mx <= ctx.rect.max.x {
+            if mx >= ctx.rect.min.x - 40.0 && mx <= ctx.rect.max.x + 40.0 {
+                // Dashed vertical leader line
+                let leader_top = ctx.ground_y - 48.0;
+                let leader_bottom = ctx.ground_y;
+                let mut curr_y = leader_top;
+                while curr_y < leader_bottom {
+                    let next_y = (curr_y + 4.0).min(leader_bottom);
+                    ctx.painter.line_segment(
+                        [Pos2::new(mx, curr_y), Pos2::new(mx, next_y)],
+                        Stroke::new(1.0, Color32::from_rgb(255, 61, 203)),
+                    );
+                    curr_y += 8.0;
+                }
+
+                // Glowing diamond pin
+                let d_size = 6.0f32;
+                let d_center = Pos2::new(mx, leader_top);
+                let p1 = Pos2::new(d_center.x, d_center.y - d_size);
+                let p2 = Pos2::new(d_center.x + d_size, d_center.y);
+                let p3 = Pos2::new(d_center.x, d_center.y + d_size);
+                let p4 = Pos2::new(d_center.x - d_size, d_center.y);
+                ctx.painter.add(egui::Shape::convex_polygon(
+                    vec![p1, p2, p3, p4],
+                    Color32::from_rgb(255, 61, 203),
+                    Stroke::new(1.0, Color32::WHITE),
+                ));
+
+                // Value readout badge
                 ctx.painter.text(
-                    Pos2::new(mx, ctx.ground_y - 40.0),
-                    egui::Align2::CENTER_CENTER,
-                    "X (MEET)",
-                    egui::FontId::monospace(12.0),
-                    Color32::from_rgb(255, 60, 60),
+                    Pos2::new(mx, leader_top - 8.0),
+                    egui::Align2::CENTER_BOTTOM,
+                    format!("MEET {:.1}m ({:.1}s)", m.position, m.time),
+                    egui::FontId::monospace(9.5),
+                    Color32::from_rgb(255, 120, 220),
                 );
             }
         }
@@ -172,25 +206,70 @@ fn handle_canvas_pan_and_zoom(
     response: &egui::Response,
     ui: &egui::Ui,
     pan_x: &mut f32,
+    pan_y: &mut f32,
     zoom: &mut f32,
     rect: Rect,
 ) {
     if response.dragged() {
         *pan_x += response.drag_delta().x;
+        *pan_y += response.drag_delta().y;
     }
-    if response.hovered() {
-        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll.abs() > 0.1 {
-            let mult = (scroll * 0.002).exp();
-            let mouse_x = ui
-                .input(|i| i.pointer.hover_pos())
-                .map(|p| p.x)
-                .unwrap_or(rect.center().x);
-            let rel_x = mouse_x - (rect.min.x + *pan_x);
-            *pan_x -= rel_x * (mult - 1.0);
-            *zoom = (*zoom * mult).clamp(0.5, 40.0);
+    apply_canvas_scroll(ui, pan_x, pan_y, zoom, rect, response.hovered());
+}
+
+fn apply_canvas_scroll(
+    ui: &egui::Ui,
+    pan_x: &mut f32,
+    pan_y: &mut f32,
+    zoom: &mut f32,
+    rect: Rect,
+    is_hovered: bool,
+) {
+    if !is_hovered {
+        return;
+    }
+    let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+    if scroll.abs() <= 0.1 {
+        return;
+    }
+    let mult = (scroll * 0.002).exp();
+    let mouse = ui
+        .input(|i| i.pointer.hover_pos())
+        .unwrap_or_else(|| rect.center());
+    let rel_x = mouse.x - (rect.min.x + *pan_x);
+    let rel_y = mouse.y - (rect.max.y - 45.0 + *pan_y);
+    *pan_x -= rel_x * (mult - 1.0);
+    *pan_y -= rel_y * (mult - 1.0);
+    *zoom = (*zoom * mult).clamp(0.5, 40.0);
+}
+
+fn draw_telemetry_optical_grid(
+    painter: &egui::Painter,
+    rect: Rect,
+    origin_x: f32,
+    ground_y: f32,
+    zoom: f32,
+) {
+    // Horizontal height grid lines
+    let y_step = 25.0 * zoom;
+    if y_step > 15.0 {
+        let mut y = ground_y - y_step;
+        while y > rect.min.y {
+            painter.line_segment(
+                [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
+                Stroke::new(0.5, Color32::from_rgba_unmultiplied(35, 48, 68, 50)),
+            );
+            y -= y_step;
         }
     }
+
+    // Origin Reticle (0, 0)
+    let reticle_color = Color32::from_rgb(0, 229, 255);
+    painter.circle_stroke(
+        Pos2::new(origin_x, ground_y),
+        4.0,
+        Stroke::new(1.0, reticle_color),
+    );
 }
 
 fn draw_metric_track(
@@ -199,8 +278,31 @@ fn draw_metric_track(
     origin_x: f32,
     ground_y: f32,
     zoom: f32,
+    theme: UiTheme,
 ) {
-    let track_color = Color32::from_rgb(80, 95, 115);
+    let (track_color, tick_color, label_color) = match theme {
+        UiTheme::Telemetry => (
+            Color32::from_rgb(32, 45, 65),
+            Color32::from_rgb(0, 229, 255),
+            Color32::from_rgb(140, 165, 195),
+        ),
+        UiTheme::Phosphor => (
+            Color32::from_rgb(20, 60, 20),
+            Color32::from_rgb(0, 255, 65),
+            Color32::from_rgb(0, 200, 50),
+        ),
+        UiTheme::Amber => (
+            Color32::from_rgb(60, 40, 10),
+            Color32::from_rgb(255, 176, 0),
+            Color32::from_rgb(220, 150, 0),
+        ),
+        UiTheme::Classic => (
+            Color32::from_rgb(80, 95, 115),
+            Color32::from_rgb(90, 105, 130),
+            Color32::from_rgb(160, 175, 195),
+        ),
+    };
+
     painter.line_segment(
         [
             Pos2::new(rect.min.x, ground_y),
@@ -215,14 +317,14 @@ fn draw_metric_track(
         if tx >= rect.min.x && tx <= rect.max.x {
             painter.line_segment(
                 [Pos2::new(tx, ground_y - 6.0), Pos2::new(tx, ground_y + 6.0)],
-                Stroke::new(1.0, Color32::from_rgb(90, 105, 130)),
+                Stroke::new(1.0, tick_color),
             );
             painter.text(
                 Pos2::new(tx, ground_y + 12.0),
                 egui::Align2::CENTER_TOP,
                 format!("{}m", i * 25),
                 egui::FontId::monospace(10.0),
-                Color32::from_rgb(160, 175, 195),
+                label_color,
             );
         }
     }

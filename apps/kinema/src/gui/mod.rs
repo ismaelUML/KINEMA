@@ -30,7 +30,10 @@ pub struct KinemaGuiApp {
     eq_ref_open: bool,
     about_open: bool,
     canvas_pan_x: f32,
+    canvas_pan_y: f32,
     canvas_zoom: f32,
+    fps_measured: f32,
+    selected_body_id: Option<String>,
 }
 
 impl Default for KinemaGuiApp {
@@ -38,6 +41,7 @@ impl Default for KinemaGuiApp {
         let mut service = SimulationService::new(Scene::default());
         let _ = service.load_scenario("two_cars_mru");
         let mut presenter = UiPresenter::new();
+        presenter.set_theme(kinema_adapter_ui::UiTheme::Telemetry);
         presenter.consume_snapshot(service.scene(), service.current_time());
 
         Self {
@@ -47,12 +51,15 @@ impl Default for KinemaGuiApp {
             speed: 1.0,
             last_tick: Instant::now(),
             active_graph: GraphKind::PositionTime,
-            status_text: "Ready. Press Space to Play, F1 for Help.".to_string(),
+            status_text: "Ready. Space: Play | Arrows: Step | F: Reset Camera".to_string(),
             help_open: false,
             eq_ref_open: false,
             about_open: false,
             canvas_pan_x: 60.0,
+            canvas_pan_y: 0.0,
             canvas_zoom: 6.0,
+            fps_measured: 60.0,
+            selected_body_id: None,
         }
     }
 }
@@ -113,6 +120,12 @@ impl KinemaGuiApp {
         if ctx.input(|i| i.key_pressed(egui::Key::F1)) {
             self.help_open = !self.help_open;
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::F)) {
+            self.canvas_pan_x = 60.0;
+            self.canvas_pan_y = 0.0;
+            self.canvas_zoom = 6.0;
+            self.status_text = "Camera reset to default view.".to_string();
+        }
     }
 
 }
@@ -122,6 +135,10 @@ impl eframe::App for KinemaGuiApp {
         let now = Instant::now();
         let dt_wall = (now - self.last_tick).as_secs_f64().min(0.1);
         self.last_tick = now;
+        if dt_wall > 0.0005 {
+            let instantaneous = (1.0 / dt_wall) as f32;
+            self.fps_measured = self.fps_measured * 0.90 + instantaneous * 0.10;
+        }
 
         self.apply_theme_styling(ui.ctx());
         self.handle_shortcuts(ui.ctx());

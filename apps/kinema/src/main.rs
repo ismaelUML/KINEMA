@@ -211,9 +211,10 @@ fn handle_step(service: &mut SimulationService, presenter: &mut UiPresenter, ste
 
 fn handle_toggle_theme(presenter: &mut UiPresenter) {
     let next = match presenter.theme() {
+        kinema_adapter_ui::UiTheme::Telemetry => kinema_adapter_ui::UiTheme::Classic,
         kinema_adapter_ui::UiTheme::Classic => kinema_adapter_ui::UiTheme::Phosphor,
         kinema_adapter_ui::UiTheme::Phosphor => kinema_adapter_ui::UiTheme::Amber,
-        kinema_adapter_ui::UiTheme::Amber => kinema_adapter_ui::UiTheme::Classic,
+        kinema_adapter_ui::UiTheme::Amber => kinema_adapter_ui::UiTheme::Telemetry,
     };
     presenter.set_theme(next);
     println!(

@@ -47,6 +47,9 @@ impl KinemaGuiApp {
     fn render_view_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button("View", |ui| {
             ui.label("Theme:");
+            if ui.button("Telemetry (Modern Dark)").clicked() {
+                self.presenter.set_theme(UiTheme::Telemetry);
+            }
             if ui.button("Classic (Win95)").clicked() {
                 self.presenter.set_theme(UiTheme::Classic);
             }
@@ -174,12 +177,29 @@ impl KinemaGuiApp {
                 });
 
             ui.separator();
-            ui.heading(format!("t = {:.3} s", self.service.current_time()));
+            ui.heading(format!("t = {:.2}s", self.service.current_time()));
+
+            let mut curr_t = self.service.current_time();
+            let t_max = self.presenter.model().duration_hint.max(10.0);
+            let slider = egui::Slider::new(&mut curr_t, 0.0..=t_max)
+                .show_value(false)
+                .step_by(0.01);
+            if ui.add_sized([140.0, 18.0], slider).changed() {
+                self.service.seek(curr_t);
+                self.presenter
+                    .consume_snapshot(self.service.scene(), self.service.current_time());
+            }
 
             render_zoom_toolbar_controls(ui, &mut self.canvas_zoom, &mut self.canvas_pan_x);
 
             ui.separator();
             ui.label("Theme:");
+            if ui
+                .selectable_label(self.presenter.theme() == UiTheme::Telemetry, "Telemetry")
+                .clicked()
+            {
+                self.presenter.set_theme(UiTheme::Telemetry);
+            }
             if ui
                 .selectable_label(self.presenter.theme() == UiTheme::Classic, "Classic")
                 .clicked()
@@ -206,7 +226,11 @@ impl KinemaGuiApp {
             ui.horizontal(|ui| {
                 ui.label(&self.status_text);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let fps = if self.is_playing { "60 FPS" } else { "IDLE" };
+                    let fps = if self.is_playing {
+                        format!("{:.0} FPS", self.fps_measured)
+                    } else {
+                        "PAUSED".to_string()
+                    };
                     ui.label(format!("dt = 1/240 s | {}", fps));
                 });
             });

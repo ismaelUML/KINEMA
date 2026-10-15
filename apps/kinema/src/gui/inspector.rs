@@ -29,13 +29,21 @@ impl KinemaGuiApp {
         let bodies = self.presenter.model().bodies.clone();
 
         for body in &bodies {
-            render_body_card(
+            let is_selected = self.selected_body_id.as_deref() == Some(&body.id);
+            if render_body_card(
                 ui,
                 &mut self.service,
                 &mut self.presenter,
                 &mut self.status_text,
                 body,
-            );
+                is_selected,
+            ) {
+                self.selected_body_id = if is_selected {
+                    None
+                } else {
+                    Some(body.id.clone())
+                };
+            }
         }
     }
 
@@ -143,9 +151,18 @@ fn render_body_card(
     presenter: &mut UiPresenter,
     status_text: &mut String,
     body: &kinema_adapter_ui::UiBodyView,
-) {
+    is_selected: bool,
+) -> bool {
+    let mut clicked = false;
     ui.group(|ui| {
-        ui.label(egui::RichText::new(&body.name).strong());
+        let title_text = if is_selected {
+            format!("🎯 {} [LOCKED]", body.name)
+        } else {
+            format!("▷ {}", body.name)
+        };
+        if ui.button(egui::RichText::new(title_text).strong()).clicked() {
+            clicked = true;
+        }
         ui.monospace(&body.formula_text);
         ui.label(format!(
             "x = {:.2} m  |  v = {:.2} m/s  |  a = {:.2} m/s²",
@@ -167,4 +184,5 @@ fn render_body_card(
             }
         }
     });
+    clicked
 }

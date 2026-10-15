@@ -133,6 +133,7 @@ pub struct UiGraphSeries {
 /// Theme palette configuration according to Section 5.5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UiTheme {
+    Telemetry,
     #[default]
     Classic,
     Phosphor,
@@ -142,6 +143,7 @@ pub enum UiTheme {
 impl UiTheme {
     pub fn palette(&self) -> UiColorPalette {
         match self {
+            UiTheme::Telemetry => default_telemetry_palette(),
             UiTheme::Classic => default_classic_palette(),
             UiTheme::Phosphor => default_phosphor_palette(),
             UiTheme::Amber => default_amber_palette(),
@@ -261,6 +263,7 @@ pub struct UiViewModel {
     pub current_help_topic: Option<HelpTopic>,
     pub help_text: Option<String>,
     pub status_message: String,
+    pub duration_hint: f64,
 }
 
 impl Default for UiViewModel {
@@ -286,6 +289,7 @@ impl Default for UiViewModel {
             current_help_topic: None,
             help_text: None,
             status_message: "Ready.".to_string(),
+            duration_hint: 10.0,
         }
     }
 }
@@ -365,6 +369,7 @@ impl SnapshotSink for UiPresenter {
         self.model.rope_views = build_rope_views(&scene.ropes);
 
         let t_max = compute_graph_t_max(&self.model.meeting_markers, &self.model.impact_markers);
+        self.model.duration_hint = t_max;
         self.model.graph_series =
             build_graph_series(&scene.bodies, self.model.active_graph_kind, t_max);
 
@@ -686,6 +691,24 @@ pub fn tension_to_color_hex(ratio: f64) -> String {
         (255.0, (1.0 - t) * 255.0, 0.0)
     };
     format!("#{:02X}{:02X}{:02X}", red as u8, green as u8, blue as u8)
+}
+
+fn default_telemetry_palette() -> UiColorPalette {
+    UiColorPalette {
+        window_face: "#11151E".to_string(),
+        bevel_light: "#232B3B".to_string(),
+        bevel_dark: "#0A0D14".to_string(),
+        title_bg: "#171C27".to_string(),
+        title_fg: "#00E5FF".to_string(),
+        canvas_bg: "#0A0D14".to_string(),
+        canvas_grid: "#232B3B".to_string(),
+        body_a: "#00E5FF".to_string(),
+        body_b: "#FFB020".to_string(),
+        vector_velocity: "#00E5FF".to_string(),
+        vector_acceleration: "#FFB020".to_string(),
+        vector_force: "#FF3DCB".to_string(),
+        text_primary: "#E6EDF7".to_string(),
+    }
 }
 
 fn default_classic_palette() -> UiColorPalette {

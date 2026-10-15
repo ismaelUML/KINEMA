@@ -1,3 +1,6 @@
-# Passes Qt MinGW libraries to the linker for Windows GNU target.
 [target.x86_64-pc-windows-gnu]
-rustflags = ["-L", "C:\\Qt\\Tools\\mingw1310_64\\x86_64-w64-mingw32\\lib"]
+linker = "C:\\Users\\Admin\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\gcc.exe"
+rustflags = [
+    "-L", "C:\\Users\\Admin\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\x86_64-w64-mingw32\\lib",
+    "-L", "C:\\Users\\Admin\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\lib\\gcc\\x86_64-w64-mingw32\\16.2.0"
+]
