@@ -254,6 +254,23 @@ impl SceneEditing for SimulationService {
         Err(format!("Body with ID {} not found", body_id))
     }
 
+    fn add_body(&mut self, body: Body) -> Result<(), String> {
+        self.push_undo();
+        self.scene.add_body(body);
+        Ok(())
+    }
+
+    fn remove_body(&mut self, body_id: &str) -> Result<(), String> {
+        self.push_undo();
+        let initial_len = self.scene.bodies.len();
+        self.scene.bodies.retain(|b| b.id != body_id);
+        if self.scene.bodies.len() < initial_len {
+            Ok(())
+        } else {
+            Err(format!("Body with ID '{}' not found", body_id))
+        }
+    }
+
     fn undo(&mut self) -> bool {
         if let Some(prev) = self.undo_stack.pop() {
             self.redo_stack.push(self.scene.clone());

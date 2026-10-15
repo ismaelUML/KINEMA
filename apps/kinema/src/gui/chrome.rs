@@ -9,6 +9,7 @@ impl KinemaGuiApp {
             egui::MenuBar::new().ui(ui, |ui| {
                 self.render_file_menu(ui);
                 self.render_edit_menu(ui);
+                self.render_entities_menu(ui);
                 self.render_view_menu(ui);
                 self.render_simulate_menu(ui);
                 self.render_scene_catalog_menu(ui);
@@ -40,6 +41,32 @@ impl KinemaGuiApp {
             if ui.button("Redo (Ctrl+Y)").clicked() && self.service.redo() {
                 self.presenter
                     .consume_snapshot(self.service.scene(), self.service.current_time());
+            }
+        });
+    }
+
+    fn render_entities_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Entities", |ui| {
+            if ui.button("🚗 + Vehicle (MRU: 15 m/s)").clicked() {
+                self.spawn_vehicle_mru();
+            }
+            if ui.button("🏎 + Vehicle (MRUV: Braking)").clicked() {
+                self.spawn_vehicle_mruv();
+            }
+            if ui.button("🏀 + Free Fall Ball (20m)").clicked() {
+                self.spawn_free_fall();
+            }
+            if ui.button("📦 + Sliding Crate (50kg)").clicked() {
+                self.spawn_friction_crate();
+            }
+            if ui.button("📐 + Incline Ramp (30°)").clicked() {
+                self.spawn_incline_block();
+            }
+            if let Some(id) = self.selected_body_id.clone() {
+                ui.separator();
+                if ui.button(format!("🗑 Delete '{}'", id)).clicked() {
+                    self.delete_body(&id);
+                }
             }
         });
     }
@@ -190,34 +217,10 @@ impl KinemaGuiApp {
                     .consume_snapshot(self.service.scene(), self.service.current_time());
             }
 
+            render_spawner_toolbar_controls(ui, self);
             render_zoom_toolbar_controls(ui, &mut self.canvas_zoom, &mut self.canvas_pan_x);
-
             ui.separator();
-            ui.label("Theme:");
-            if ui
-                .selectable_label(self.presenter.theme() == UiTheme::Telemetry, "Telemetry")
-                .clicked()
-            {
-                self.presenter.set_theme(UiTheme::Telemetry);
-            }
-            if ui
-                .selectable_label(self.presenter.theme() == UiTheme::Classic, "Classic")
-                .clicked()
-            {
-                self.presenter.set_theme(UiTheme::Classic);
-            }
-            if ui
-                .selectable_label(self.presenter.theme() == UiTheme::Phosphor, "Phosphor")
-                .clicked()
-            {
-                self.presenter.set_theme(UiTheme::Phosphor);
-            }
-            if ui
-                .selectable_label(self.presenter.theme() == UiTheme::Amber, "Amber")
-                .clicked()
-            {
-                self.presenter.set_theme(UiTheme::Amber);
-            }
+            render_theme_toolbar_controls(ui, &mut self.presenter);
         });
     }
 
@@ -259,5 +262,161 @@ fn render_zoom_toolbar_controls(ui: &mut egui::Ui, zoom: &mut f32, pan_x: &mut f
     if ui.button("1:1").on_hover_text("Reset zoom and pan").clicked() {
         *zoom = 6.0;
         *pan_x = 60.0;
+    }
+}
+
+fn render_spawner_toolbar_controls(ui: &mut egui::Ui, app: &mut KinemaGuiApp) {
+    ui.menu_button("+ Spawn", |ui| {
+        if ui.button("🚗 Vehicle (MRU: 15 m/s)").clicked() {
+            app.spawn_vehicle_mru();
+        }
+        if ui.button("🏎 Vehicle (MRUV: Braking)").clicked() {
+            app.spawn_vehicle_mruv();
+        }
+        if ui.button("🏀 Free Fall Ball (20m)").clicked() {
+            app.spawn_free_fall();
+        }
+        if ui.button("📦 Friction Crate (50kg)").clicked() {
+            app.spawn_friction_crate();
+        }
+        if ui.button("📐 Incline Ramp (30°)").clicked() {
+            app.spawn_incline_block();
+        }
+    });
+
+    if let Some(id) = app.selected_body_id.clone() {
+        if ui
+            .button("🗑 Delete")
+            .on_hover_text("Delete selected body from scene")
+            .clicked()
+        {
+            app.delete_body(&id);
+        }
+    }
+}
+
+fn render_theme_toolbar_controls(
+    ui: &mut egui::Ui,
+    presenter: &mut kinema_adapter_ui::UiPresenter,
+) {
+    ui.label("Theme:");
+    if ui
+        .selectable_label(presenter.theme() == UiTheme::Telemetry, "Telemetry")
+        .clicked()
+    {
+        presenter.set_theme(UiTheme::Telemetry);
+    }
+    if ui
+        .selectable_label(presenter.theme() == UiTheme::Classic, "Classic")
+        .clicked()
+    {
+        presenter.set_theme(UiTheme::Classic);
+    }
+    if ui
+        .selectable_label(presenter.theme() == UiTheme::Phosphor, "Phosphor")
+        .clicked()
+    {
+        presenter.set_theme(UiTheme::Phosphor);
+    }
+    if ui
+        .selectable_label(presenter.theme() == UiTheme::Amber, "Amber")
+        .clicked()
+    {
+        presenter.set_theme(UiTheme::Amber);
+    }
+}
+
+impl KinemaGuiApp {
+    pub(super) fn delete_body(&mut self, id: &str) {
+        let _ = self.service.remove_body(id);
+        if self.selected_body_id.as_deref() == Some(id) {
+            self.selected_body_id = None;
+        }
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.status_text = format!("Deleted body '{}'.", id);
+    }
+
+    pub(super) fn spawn_vehicle_mru(&mut self) {
+        use kinema_domain::{Body, EntityKind, Mru};
+        let count = self.service.scene().bodies.len() + 1;
+        let id = format!("car_{}", count);
+        let name = format!("Vehicle {}", count);
+        let body = Body::new(&id, &name, Mru::new(0.0, 15.0))
+            .with_kind(EntityKind::Vehicle { lane: count % 3 });
+        let _ = self.service.add_body(body);
+        self.selected_body_id = Some(id);
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.status_text = format!("Added new MRU vehicle '{}'.", name);
+    }
+
+    pub(super) fn spawn_vehicle_mruv(&mut self) {
+        use kinema_domain::{Body, EntityKind, Mruv};
+        let count = self.service.scene().bodies.len() + 1;
+        let id = format!("car_mruv_{}", count);
+        let name = format!("Braking Car {}", count);
+        let body = Body::new(&id, &name, Mruv::braking(80.0, -12.0, 2.5))
+            .with_kind(EntityKind::Vehicle { lane: count % 3 });
+        let _ = self.service.add_body(body);
+        self.selected_body_id = Some(id);
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.status_text = format!("Added new MRUV vehicle '{}'.", name);
+    }
+
+    pub(super) fn spawn_free_fall(&mut self) {
+        use kinema_domain::{Body, EntityKind, Mvl};
+        let count = self.service.scene().bodies.len() + 1;
+        let id = format!("ball_{}", count);
+        let name = format!("Drop Ball {}", count);
+        let body = Body::new(&id, &name, Mvl::new(20.0, 0.0, 9.81).with_ground_stop(true))
+            .with_kind(EntityKind::FreeFall {
+                initial_height: 20.0,
+            });
+        let _ = self.service.add_body(body);
+        self.selected_body_id = Some(id);
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.status_text = format!("Added free fall drop '{}'.", name);
+    }
+
+    pub(super) fn spawn_friction_crate(&mut self) {
+        use kinema_domain::{BlockDynamics, Body, EntityKind};
+        let count = self.service.scene().bodies.len() + 1;
+        let id = format!("crate_{}", count);
+        let name = format!("Wooden Crate {}", count);
+        let block = BlockDynamics::horizontal(50.0, 0.5, 0.3, 30.0);
+        let body = Body::new(&id, &name, block).with_kind(EntityKind::FrictionBlock {
+            mass: 50.0,
+            mu_s: 0.5,
+            mu_k: 0.3,
+            f_app: 30.0,
+        });
+        let _ = self.service.add_body(body);
+        self.selected_body_id = Some(id);
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.status_text = format!("Added friction crate '{}'.", name);
+    }
+
+    pub(super) fn spawn_incline_block(&mut self) {
+        use kinema_domain::{Body, EntityKind, Mruv};
+        let count = self.service.scene().bodies.len() + 1;
+        let id = format!("ramp_block_{}", count);
+        let name = format!("Incline Block {}", count);
+        let angle = 30.0f64.to_radians();
+        let a = 9.81 * angle.sin();
+        let body = Body::new(&id, &name, Mruv::new(0.0, 0.0, a)).with_kind(
+            EntityKind::InclineBlock {
+                angle_rad: angle,
+                incline_length: 20.0,
+            },
+        );
+        let _ = self.service.add_body(body);
+        self.selected_body_id = Some(id);
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.status_text = format!("Added incline plane block '{}'.", name);
     }
 }

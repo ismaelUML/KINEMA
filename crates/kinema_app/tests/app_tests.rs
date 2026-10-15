@@ -367,3 +367,32 @@ fn test_m5_rope_surface_friction_scenario() {
     assert_eq!(ropes[0].surface_y, Some(0.0));
     assert_eq!(ropes[0].friction_mu, 0.4);
 }
+
+#[test]
+fn test_scene_editing_add_and_remove_body() {
+    use kinema_domain::{Body, EntityKind, Mru};
+    use kinema_ports::SceneEditing;
+
+    let scene = Scene::new("Test Spawner");
+    let mut service = SimulationService::new(scene);
+    assert_eq!(service.scene().bodies.len(), 0);
+
+    let new_car = Body::new("car_custom", "Custom Speedster", Mru::new(10.0, 25.0))
+        .with_kind(EntityKind::Vehicle { lane: 0 });
+    service.add_body(new_car).expect("add body");
+    assert_eq!(service.scene().bodies.len(), 1);
+    assert_eq!(service.scene().bodies[0].id, "car_custom");
+
+    // Test removing body
+    service.remove_body("car_custom").expect("remove body");
+    assert_eq!(service.scene().bodies.len(), 0);
+
+    // Test undo restores removed body
+    assert!(service.undo());
+    assert_eq!(service.scene().bodies.len(), 1);
+    assert_eq!(service.scene().bodies[0].id, "car_custom");
+
+    // Test redo removes body again
+    assert!(service.redo());
+    assert_eq!(service.scene().bodies.len(), 0);
+}

@@ -4,8 +4,9 @@ mod ropes;
 
 use super::KinemaGuiApp;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
-use kinema_adapter_ui::{GraphKind, UiTheme};
+use kinema_adapter_ui::{GraphKind, UiBodyView, UiTheme};
 use kinema_domain::EntityKind;
+use kinema_ports::{SceneEditing, SnapshotSink};
 
 struct PaintContext<'a> {
     painter: &'a egui::Painter,
@@ -75,6 +76,18 @@ impl KinemaGuiApp {
         }
         draw_metric_track(&painter, rect, origin_x, ground_y, self.canvas_zoom, theme);
 
+        if response.clicked() {
+            if let Some(pos) = response.interact_pointer_pos() {
+                self.selected_body_id = check_entity_click(
+                    pos,
+                    &self.presenter.model().bodies,
+                    origin_x,
+                    ground_y,
+                    self.canvas_zoom,
+                );
+            }
+        }
+
         // Draw bodies
         let ctx = PaintContext {
             painter: &painter,
@@ -86,6 +99,111 @@ impl KinemaGuiApp {
         self.paint_bodies(&ctx);
         // Draw ropes
         self.paint_ropes(&ctx);
+        // Draw interactive gizmos for selected entity
+        self.render_active_gizmos(ui, &painter, origin_x, ground_y);
+    }
+
+    fn render_active_gizmos(
+        &mut self,
+        ui: &mut egui::Ui,
+        painter: &egui::Painter,
+        origin_x: f32,
+        ground_y: f32,
+    ) {
+        let Some(sel_id) = self.selected_body_id.clone() else {
+            return;
+        };
+        let bodies = self.presenter.model().bodies.clone();
+        let Some(body) = bodies.iter().find(|b| b.id == sel_id) else {
+            return;
+        };
+
+        let lane_offset = match body.kind {
+            EntityKind::Vehicle { lane } => lane as f32 * 32.0,
+            _ => 0.0,
+        };
+        let px = origin_x + (body.current_position as f32 * self.canvas_zoom);
+        let py = ground_y - 22.0 - lane_offset;
+
+        self.interact_position_gizmo(ui, painter, body, px, ground_y);
+        self.interact_velocity_gizmo(ui, painter, body, px, py);
+    }
+
+    fn interact_position_gizmo(
+        &mut self,
+        ui: &mut egui::Ui,
+        painter: &egui::Painter,
+        body: &UiBodyView,
+        px: f32,
+        ground_y: f32,
+    ) {
+        let center = Pos2::new(px + 21.0, ground_y + 20.0);
+        let rect = Rect::from_center_size(center, Vec2::new(56.0, 18.0));
+        let id = ui.make_persistent_id("body_gizmo_pos");
+        let resp = ui.interact(rect, id, egui::Sense::drag());
+
+        if resp.dragged() {
+            let delta_m = (resp.drag_delta().x / self.canvas_zoom) as f64;
+            let param_name = if body.parameters.iter().any(|(k, _)| *k == "s0") {
+                "s0"
+            } else if body.parameters.iter().any(|(k, _)| *k == "y0") {
+                "y0"
+            } else {
+                "x0"
+            };
+            let curr = body
+                .parameters
+                .iter()
+                .find(|(k, _)| *k == param_name)
+                .map(|(_, v)| *v)
+                .unwrap_or(body.current_position);
+            let new_val = curr + delta_m;
+            let _ = self.service.edit_parameter(&body.id, param_name, new_val);
+            self.presenter
+                .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.status_text =
+                format!("Moved {} to {} = {:.2}m", body.name, param_name, new_val);
+        }
+        primitives::draw_position_gizmo(painter, center, resp.hovered(), resp.dragged());
+    }
+
+    fn interact_velocity_gizmo(
+        &mut self,
+        ui: &mut egui::Ui,
+        painter: &egui::Painter,
+        body: &UiBodyView,
+        px: f32,
+        py: f32,
+    ) {
+        let v_len = (body.current_velocity as f32 * 2.5).clamp(-65.0, 65.0);
+        let center = Pos2::new(px + 21.0 + v_len, py + 12.0);
+        let rect = Rect::from_center_size(center, Vec2::new(16.0, 16.0));
+        let id = ui.make_persistent_id("body_gizmo_vel");
+        let resp = ui.interact(rect, id, egui::Sense::drag());
+
+        if resp.dragged() {
+            let delta_v = (resp.drag_delta().x / 2.5) as f64;
+            let param_name = if body.parameters.iter().any(|(k, _)| *k == "v0") {
+                "v0"
+            } else {
+                "v"
+            };
+            let curr = body
+                .parameters
+                .iter()
+                .find(|(k, _)| *k == param_name)
+                .map(|(_, v)| *v)
+                .unwrap_or(body.current_velocity);
+            let new_val = curr + delta_v;
+            let _ = self.service.edit_parameter(&body.id, param_name, new_val);
+            self.presenter
+                .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.status_text = format!(
+                "Adjusted {} to {} = {:.2}m/s",
+                body.name, param_name, new_val
+            );
+        }
+        primitives::draw_velocity_gizmo(painter, center, resp.hovered(), resp.dragged());
     }
 
     fn paint_bodies(&self, ctx: &PaintContext<'_>) {
@@ -328,4 +446,26 @@ fn draw_metric_track(
             );
         }
     }
+}
+
+fn check_entity_click(
+    pointer_pos: Pos2,
+    bodies: &[UiBodyView],
+    origin_x: f32,
+    ground_y: f32,
+    zoom: f32,
+) -> Option<String> {
+    for b in bodies {
+        let lane_offset = match b.kind {
+            EntityKind::Vehicle { lane } => lane as f32 * 32.0,
+            _ => 0.0,
+        };
+        let px = origin_x + (b.current_position as f32 * zoom);
+        let py = ground_y - 22.0 - lane_offset;
+        let bounds = Rect::from_center_size(Pos2::new(px + 21.0, py), Vec2::new(60.0, 40.0));
+        if bounds.contains(pointer_pos) {
+            return Some(b.id.clone());
+        }
+    }
+    None
 }

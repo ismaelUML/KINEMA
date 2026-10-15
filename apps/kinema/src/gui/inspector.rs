@@ -4,6 +4,13 @@ use kinema_adapter_ui::UiPresenter;
 use kinema_app::SimulationService;
 use kinema_ports::{SceneEditing, SnapshotSink};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BodyCardAction {
+    None,
+    ToggleSelect,
+    Delete,
+}
+
 impl KinemaGuiApp {
     pub(super) fn render_side_panel(&mut self, ui: &mut egui::Ui) {
         egui::Panel::right("inspector_side_panel")
@@ -27,23 +34,37 @@ impl KinemaGuiApp {
     fn render_body_equations(&mut self, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new("BODIES IN MOTION").strong());
         let bodies = self.presenter.model().bodies.clone();
+        let mut pending_action = None;
 
         for body in &bodies {
             let is_selected = self.selected_body_id.as_deref() == Some(&body.id);
-            if render_body_card(
+            let action = render_body_card(
                 ui,
                 &mut self.service,
                 &mut self.presenter,
                 &mut self.status_text,
                 body,
                 is_selected,
-            ) {
-                self.selected_body_id = if is_selected {
-                    None
-                } else {
-                    Some(body.id.clone())
-                };
+            );
+            if action != BodyCardAction::None {
+                pending_action = Some((body.id.clone(), is_selected, action));
             }
+        }
+
+        if let Some((id, is_selected, action)) = pending_action {
+            self.apply_body_card_action(&id, is_selected, action);
+        }
+    }
+
+    fn apply_body_card_action(&mut self, id: &str, is_selected: bool, action: BodyCardAction) {
+        if action == BodyCardAction::ToggleSelect {
+            self.selected_body_id = if is_selected {
+                None
+            } else {
+                Some(id.to_string())
+            };
+        } else if action == BodyCardAction::Delete {
+            self.delete_body(id);
         }
     }
 
@@ -152,37 +173,59 @@ fn render_body_card(
     status_text: &mut String,
     body: &kinema_adapter_ui::UiBodyView,
     is_selected: bool,
-) -> bool {
-    let mut clicked = false;
+) -> BodyCardAction {
+    let mut action = BodyCardAction::None;
     ui.group(|ui| {
-        let title_text = if is_selected {
-            format!("🎯 {} [LOCKED]", body.name)
-        } else {
-            format!("▷ {}", body.name)
-        };
-        if ui.button(egui::RichText::new(title_text).strong()).clicked() {
-            clicked = true;
-        }
+        ui.horizontal(|ui| {
+            let title_text = if is_selected {
+                format!("🎯 {} [LOCKED]", body.name)
+            } else {
+                format!("▷ {}", body.name)
+            };
+            if ui.button(egui::RichText::new(title_text).strong()).clicked() {
+                action = BodyCardAction::ToggleSelect;
+            }
+            if is_selected
+                && ui
+                    .button(
+                        egui::RichText::new("🗑 Delete").color(egui::Color32::from_rgb(240, 80, 80)),
+                    )
+                    .clicked()
+            {
+                action = BodyCardAction::Delete;
+            }
+        });
         ui.monospace(&body.formula_text);
         ui.label(format!(
             "x = {:.2} m  |  v = {:.2} m/s  |  a = {:.2} m/s²",
             body.current_position, body.current_velocity, body.current_acceleration
         ));
-        if !body.parameters.is_empty() {
-            ui.separator();
-            ui.label(egui::RichText::new("Parameters (Drag / Click to edit):").small());
-            for (p_name, p_val) in &body.parameters {
-                render_single_param_row(
-                    ui,
-                    service,
-                    presenter,
-                    status_text,
-                    &body.id,
-                    p_name,
-                    *p_val,
-                );
-            }
-        }
+        render_body_parameters(ui, service, presenter, status_text, body);
     });
-    clicked
+    action
+}
+
+fn render_body_parameters(
+    ui: &mut egui::Ui,
+    service: &mut SimulationService,
+    presenter: &mut UiPresenter,
+    status_text: &mut String,
+    body: &kinema_adapter_ui::UiBodyView,
+) {
+    if body.parameters.is_empty() {
+        return;
+    }
+    ui.separator();
+    ui.label(egui::RichText::new("Parameters (Drag / Click to edit):").small());
+    for (p_name, p_val) in &body.parameters {
+        render_single_param_row(
+            ui,
+            service,
+            presenter,
+            status_text,
+            &body.id,
+            p_name,
+            *p_val,
+        );
+    }
 }

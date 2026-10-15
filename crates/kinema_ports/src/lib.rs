@@ -1,4 +1,4 @@
-use kinema_domain::Scene;
+use kinema_domain::{Body, Scene};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -38,6 +38,8 @@ pub trait SimulationControl {
 /// Input Port: Scene editing operations.
 pub trait SceneEditing {
     fn edit_parameter(&mut self, body_id: &str, param: &str, value: f64) -> Result<(), String>;
+    fn add_body(&mut self, body: Body) -> Result<(), String>;
+    fn remove_body(&mut self, body_id: &str) -> Result<(), String>;
     fn undo(&mut self) -> bool;
     fn redo(&mut self) -> bool;
 }

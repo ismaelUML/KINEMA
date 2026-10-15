@@ -164,3 +164,63 @@ pub fn draw_friction_sparks(painter: &egui::Painter, base_x: f32, ground_y: f32,
         painter.circle_filled(p_spark, 1.5, spark_color);
     }
 }
+
+/// Draws interactive position gizmo handle for moving bodies in canvas.
+pub fn draw_position_gizmo(
+    painter: &egui::Painter,
+    center: Pos2,
+    is_hovered: bool,
+    is_dragging: bool,
+) {
+    let accent = if is_dragging {
+        Color32::from_rgb(255, 61, 203)
+    } else if is_hovered {
+        Color32::from_rgb(0, 240, 255)
+    } else {
+        Color32::from_rgb(0, 190, 220)
+    };
+
+    let rect = Rect::from_center_size(center, Vec2::new(56.0, 18.0));
+    painter.rect_filled(
+        rect,
+        egui::CornerRadius::same(5),
+        Color32::from_rgba_unmultiplied(10, 15, 24, 220),
+    );
+    painter.rect_stroke(
+        rect,
+        egui::CornerRadius::same(5),
+        Stroke::new(1.2, accent),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        center,
+        egui::Align2::CENTER_CENTER,
+        "↔ MOVE X",
+        egui::FontId::monospace(9.0),
+        accent,
+    );
+}
+
+/// Draws interactive velocity gizmo handle at the tip of the velocity vector.
+pub fn draw_velocity_gizmo(
+    painter: &egui::Painter,
+    center: Pos2,
+    is_hovered: bool,
+    is_dragging: bool,
+) {
+    let accent = if is_dragging {
+        Color32::from_rgb(255, 220, 60)
+    } else if is_hovered {
+        Color32::from_rgb(255, 176, 32)
+    } else {
+        Color32::from_rgb(210, 140, 20)
+    };
+
+    painter.circle_filled(
+        center,
+        6.0,
+        Color32::from_rgba_unmultiplied(15, 20, 30, 230),
+    );
+    painter.circle_stroke(center, 6.0, Stroke::new(1.5, accent));
+    painter.circle_filled(center, 2.5, accent);
+}
