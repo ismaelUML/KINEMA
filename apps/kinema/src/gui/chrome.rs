@@ -1,4 +1,4 @@
-use super::KinemaGuiApp;
+use super::{KinemaGuiApp, MultiverseDisplayMode};
 use eframe::egui;
 use kinema_adapter_ui::{GraphKind, UiTheme};
 use kinema_ports::{
@@ -13,6 +13,7 @@ impl KinemaGuiApp {
                 self.render_edit_menu(ui);
                 self.render_entities_menu(ui);
                 self.render_challenges_menu(ui);
+                self.render_multiverse_menu(ui);
                 self.render_view_menu(ui);
                 self.render_simulate_menu(ui);
                 self.render_scene_catalog_menu(ui);
@@ -137,19 +138,13 @@ impl KinemaGuiApp {
                 self.is_playing = !self.is_playing;
             }
             if ui.button("Step Forward (Right)").clicked() {
-                self.service.step_forward();
-                self.presenter
-                    .consume_snapshot(self.service.scene(), self.service.current_time());
+                self.step_forward_all();
             }
             if ui.button("Step Backward (Left)").clicked() {
-                self.service.step_backward();
-                self.presenter
-                    .consume_snapshot(self.service.scene(), self.service.current_time());
+                self.step_backward_all();
             }
             if ui.button("Reset to t=0 (Home)").clicked() {
-                self.service.seek(0.0);
-                self.presenter
-                    .consume_snapshot(self.service.scene(), self.service.current_time());
+                self.seek_all(0.0);
             }
         });
     }
@@ -234,16 +229,12 @@ impl KinemaGuiApp {
     fn render_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui.button(" |< ").on_hover_text("Reset to t = 0").clicked() {
-                self.service.seek(0.0);
-                self.presenter
-                    .consume_snapshot(self.service.scene(), self.service.current_time());
+                self.seek_all(0.0);
             }
             if ui.button(" << ").on_hover_text("Step back 1s").clicked() {
                 for _ in 0..60 {
-                    self.service.step_backward();
+                    self.step_backward_all();
                 }
-                self.presenter
-                    .consume_snapshot(self.service.scene(), self.service.current_time());
             }
             let play_text = if self.is_playing { " || " } else { " ▶ " };
             if ui.button(play_text).on_hover_text("Play / Pause").clicked() {
@@ -251,10 +242,8 @@ impl KinemaGuiApp {
             }
             if ui.button(" >> ").on_hover_text("Step forward 1s").clicked() {
                 for _ in 0..60 {
-                    self.service.step_forward();
+                    self.step_forward_all();
                 }
-                self.presenter
-                    .consume_snapshot(self.service.scene(), self.service.current_time());
             }
 
             ui.separator();
@@ -278,9 +267,7 @@ impl KinemaGuiApp {
                 .show_value(false)
                 .step_by(0.01);
             if ui.add_sized([140.0, 18.0], slider).changed() {
-                self.service.seek(curr_t);
-                self.presenter
-                    .consume_snapshot(self.service.scene(), self.service.current_time());
+                self.seek_all(curr_t);
             }
 
             render_spawner_toolbar_controls(ui, self);
@@ -288,6 +275,7 @@ impl KinemaGuiApp {
             ui.separator();
             render_theme_toolbar_controls(ui, &mut self.presenter);
             render_challenge_toolbar_badge(ui, self);
+            render_multiverse_toolbar_controls(ui, self);
         });
     }
 
@@ -528,5 +516,194 @@ impl KinemaGuiApp {
         self.presenter
             .consume_snapshot(self.service.scene(), self.service.current_time());
         self.status_text = format!("Added incline plane block '{}'.", name);
+    }
+
+    fn render_multiverse_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Multiverse", |ui| {
+            render_multiverse_status_header(ui, self);
+            ui.separator();
+            ui.label("⚡ New Universe Hypothesis:");
+            render_multiverse_preset_items(ui, self);
+            render_multiverse_display_options(ui, self);
+        });
+    }
+
+    fn launch_multiverse_scene(&mut self, scene: kinema_domain::Scene, label: &str) {
+        let mut mv_service = kinema_app::SimulationService::new(scene);
+        mv_service.seek(self.service.current_time());
+        self.multiverse_presenter
+            .consume_snapshot(mv_service.scene(), mv_service.current_time());
+        self.multiverse_service = Some(mv_service);
+        self.multiverse_label = label.to_string();
+        if self.multiverse_mode == MultiverseDisplayMode::Disabled {
+            self.multiverse_mode = MultiverseDisplayMode::SplitScreen;
+        }
+        self.status_text = format!("Multiverse active: {}", label);
+    }
+
+    pub(super) fn enable_multiverse_moon(&mut self) {
+        let mut scene = self.service.scene().clone();
+        scene.name = format!("{} (Moon)", scene.name);
+        mutate_scene_gravity(&mut scene, 1.62);
+        self.launch_multiverse_scene(scene, "Moon (g = 1.62 m/s²)");
+    }
+
+    pub(super) fn enable_multiverse_mars(&mut self) {
+        let mut scene = self.service.scene().clone();
+        scene.name = format!("{} (Mars)", scene.name);
+        mutate_scene_gravity(&mut scene, 3.71);
+        self.launch_multiverse_scene(scene, "Mars (g = 3.71 m/s²)");
+    }
+
+    pub(super) fn enable_multiverse_zero_friction(&mut self) {
+        let mut scene = self.service.scene().clone();
+        scene.name = format!("{} (No Friction)", scene.name);
+        mutate_scene_zero_friction(&mut scene);
+        self.launch_multiverse_scene(scene, "Zero Friction (μ = 0)");
+    }
+
+    pub(super) fn enable_multiverse_custom(&mut self) {
+        let mut scene = self.service.scene().clone();
+        scene.name = format!("{} (Parallel B)", scene.name);
+        self.launch_multiverse_scene(scene, "Custom Clone");
+    }
+
+    pub(super) fn disable_multiverse(&mut self) {
+        self.multiverse_service = None;
+        self.multiverse_mode = MultiverseDisplayMode::Disabled;
+        self.status_text = "Multiverse deactivated.".to_string();
+    }
+}
+
+fn render_multiverse_status_header(ui: &mut egui::Ui, app: &mut KinemaGuiApp) {
+    if app.multiverse_service.is_some() {
+        ui.label(format!("Active: {}", app.multiverse_label));
+        if ui.button("❌ Close Parallel Universe").clicked() {
+            app.disable_multiverse();
+        }
+    } else {
+        ui.label("Status: Single Universe (World A only)");
+    }
+}
+
+fn render_multiverse_preset_items(ui: &mut egui::Ui, app: &mut KinemaGuiApp) {
+    if ui.button("🌑 Moon Gravity (g = 1.62 m/s²)").clicked() {
+        app.enable_multiverse_moon();
+    }
+    if ui.button("🪐 Mars Gravity (g = 3.71 m/s²)").clicked() {
+        app.enable_multiverse_mars();
+    }
+    if ui.button("🧊 Zero Friction (μ = 0.0)").clicked() {
+        app.enable_multiverse_zero_friction();
+    }
+    if ui.button("📋 Exact Clone (Custom)").clicked() {
+        app.enable_multiverse_custom();
+    }
+}
+
+fn render_multiverse_display_options(ui: &mut egui::Ui, app: &mut KinemaGuiApp) {
+    if app.multiverse_service.is_none() {
+        return;
+    }
+    ui.separator();
+    ui.label("Display Mode:");
+    if ui
+        .selectable_label(
+            app.multiverse_mode == MultiverseDisplayMode::SplitScreen,
+            "◫ Split-Screen View (Side-by-Side)",
+        )
+        .clicked()
+    {
+        app.multiverse_mode = MultiverseDisplayMode::SplitScreen;
+    }
+    if ui
+        .selectable_label(
+            app.multiverse_mode == MultiverseDisplayMode::GhostOverlay,
+            "👻 Ghost Overlay (Holographic)",
+        )
+        .clicked()
+    {
+        app.multiverse_mode = MultiverseDisplayMode::GhostOverlay;
+    }
+}
+
+fn render_multiverse_toolbar_controls(ui: &mut egui::Ui, app: &mut KinemaGuiApp) {
+    if app.multiverse_service.is_none() {
+        return;
+    }
+    ui.separator();
+    let mode_str = match app.multiverse_mode {
+        MultiverseDisplayMode::SplitScreen => "Split",
+        MultiverseDisplayMode::GhostOverlay => "Ghost",
+        MultiverseDisplayMode::Disabled => "Off",
+    };
+    let badge_text = format!("🌌 {} [{}]", app.multiverse_label, mode_str);
+    if ui
+        .button(badge_text)
+        .on_hover_text("Click to toggle Split-Screen / Ghost Overlay")
+        .clicked()
+    {
+        app.multiverse_mode = match app.multiverse_mode {
+            MultiverseDisplayMode::SplitScreen => MultiverseDisplayMode::GhostOverlay,
+            _ => MultiverseDisplayMode::SplitScreen,
+        };
+    }
+    if ui
+        .button("✖")
+        .on_hover_text("Close Parallel Universe")
+        .clicked()
+    {
+        app.disable_multiverse();
+    }
+}
+
+fn mutate_body_gravity(body: &mut kinema_domain::Body, g: f64) {
+    match body.motion {
+        kinema_domain::Motion::Mvl(ref mut mvl) => mvl.g = g,
+        kinema_domain::Motion::Dynamics(ref mut d) => d.gravity = g,
+        kinema_domain::Motion::Atwood(ref mut a) => a.g = g,
+        kinema_domain::Motion::TablePulley(ref mut t) => t.g = g,
+        kinema_domain::Motion::Mruv(ref mut mruv) => {
+            if let kinema_domain::EntityKind::InclineBlock { angle_rad, .. } = body.kind {
+                mruv.a = g * angle_rad.sin();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn mutate_scene_gravity(scene: &mut kinema_domain::Scene, g: f64) {
+    scene.gravity = g;
+    for body in &mut scene.bodies {
+        mutate_body_gravity(body, g);
+    }
+}
+
+fn mutate_body_zero_friction(body: &mut kinema_domain::Body) {
+    match body.motion {
+        kinema_domain::Motion::Dynamics(ref mut d) => {
+            d.mu_s = 0.0;
+            d.mu_k = 0.0;
+        }
+        kinema_domain::Motion::TablePulley(ref mut t) => {
+            t.mu_s = 0.0;
+            t.mu_k = 0.0;
+        }
+        _ => {}
+    }
+    if let kinema_domain::EntityKind::FrictionBlock {
+        ref mut mu_s,
+        ref mut mu_k,
+        ..
+    } = body.kind
+    {
+        *mu_s = 0.0;
+        *mu_k = 0.0;
+    }
+}
+
+fn mutate_scene_zero_friction(scene: &mut kinema_domain::Scene) {
+    for body in &mut scene.bodies {
+        mutate_body_zero_friction(body);
     }
 }

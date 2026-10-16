@@ -420,3 +420,58 @@ fn test_scene_editing_create_new_scene() {
     assert_eq!(service.scene().bodies.len(), 1);
 }
 
+#[test]
+fn test_multiverse_dual_simulation_synchronization() {
+    use kinema_domain::{Body, EntityKind, Motion, Motion1D, Mvl};
+
+    let mut scene_a = Scene::new("Earth Drop");
+    scene_a.gravity = 9.81;
+    scene_a.add_body(
+        Body::new("drop_ball", "Steel Ball", Mvl::new(50.0, 0.0, 9.81))
+            .with_kind(EntityKind::FreeFall { initial_height: 50.0 }),
+    );
+
+    let mut scene_b = scene_a.clone();
+    scene_b.name = "Moon Drop".to_string();
+    scene_b.gravity = 1.62;
+    if let Motion::Mvl(ref mut mvl) = scene_b.bodies[0].motion {
+        mvl.g = 1.62;
+    }
+
+    let mut service_a = SimulationService::new(scene_a);
+    let mut service_b = SimulationService::new(scene_b);
+
+    // Initial state at t = 0
+    assert_eq!(service_a.current_time(), 0.0);
+    assert_eq!(service_b.current_time(), 0.0);
+
+    // Step forward 60 ticks (1.0 second of simulation)
+    for _ in 0..60 {
+        service_a.step_forward();
+        service_b.step_forward();
+    }
+
+    let t = service_a.current_time();
+    assert!((t - 1.0).abs() < 1e-4);
+    assert_eq!(service_a.current_time(), service_b.current_time());
+
+    // In Earth (g = 9.81), y(1) = 50 - 0.5 * 9.81 * 1^2 = 45.095
+    // In Moon (g = 1.62), y(1) = 50 - 0.5 * 1.62 * 1^2 = 49.19
+    let y_earth = service_a.scene().bodies[0].motion.position_at(t);
+    let y_moon = service_b.scene().bodies[0].motion.position_at(t);
+
+    assert!(y_earth < y_moon);
+    assert!((y_earth - 45.095).abs() < 0.01);
+    assert!((y_moon - 49.19).abs() < 0.01);
+
+    // Seek all
+    service_a.seek(2.0);
+    service_b.seek(2.0);
+    assert_eq!(service_a.current_time(), 2.0);
+    assert_eq!(service_b.current_time(), 2.0);
+
+    let y_earth_2 = service_a.scene().bodies[0].motion.position_at(2.0);
+    let y_moon_2 = service_b.scene().bodies[0].motion.position_at(2.0);
+    assert!(y_earth_2 < y_moon_2);
+}
+

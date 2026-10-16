@@ -18,6 +18,14 @@ use kinema_domain::Scene;
 use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl, SnapshotSink};
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MultiverseDisplayMode {
+    #[default]
+    Disabled,
+    SplitScreen,
+    GhostOverlay,
+}
+
 pub struct KinemaGuiApp {
     service: SimulationService,
     presenter: UiPresenter,
@@ -41,6 +49,10 @@ pub struct KinemaGuiApp {
     save_scene_path: String,
     load_scene_open: bool,
     load_scene_path: String,
+    pub multiverse_mode: MultiverseDisplayMode,
+    pub multiverse_service: Option<SimulationService>,
+    pub multiverse_presenter: UiPresenter,
+    pub multiverse_label: String,
 }
 
 impl Default for KinemaGuiApp {
@@ -74,6 +86,10 @@ impl Default for KinemaGuiApp {
             save_scene_path: "experiment.kin".to_string(),
             load_scene_open: false,
             load_scene_path: "experiment.kin".to_string(),
+            multiverse_mode: MultiverseDisplayMode::Disabled,
+            multiverse_service: None,
+            multiverse_presenter: UiPresenter::new(),
+            multiverse_label: "World B".to_string(),
         }
     }
 }
@@ -92,9 +108,58 @@ impl KinemaGuiApp {
         let clamped_steps = steps.clamp(1, 10);
         for _ in 0..clamped_steps {
             self.service.step_forward();
+            if let Some(ref mut mv) = self.multiverse_service {
+                mv.step_forward();
+            }
         }
         self.presenter
             .consume_snapshot(self.service.scene(), self.service.current_time());
+        if let Some(ref mv) = self.multiverse_service {
+            self.multiverse_presenter
+                .consume_snapshot(mv.scene(), mv.current_time());
+        }
+        self.sync_active_challenge();
+    }
+
+    pub(super) fn step_forward_all(&mut self) {
+        self.service.step_forward();
+        if let Some(ref mut mv) = self.multiverse_service {
+            mv.step_forward();
+        }
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        if let Some(ref mv) = self.multiverse_service {
+            self.multiverse_presenter
+                .consume_snapshot(mv.scene(), mv.current_time());
+        }
+        self.sync_active_challenge();
+    }
+
+    pub(super) fn step_backward_all(&mut self) {
+        self.service.step_backward();
+        if let Some(ref mut mv) = self.multiverse_service {
+            mv.step_backward();
+        }
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        if let Some(ref mv) = self.multiverse_service {
+            self.multiverse_presenter
+                .consume_snapshot(mv.scene(), mv.current_time());
+        }
+        self.sync_active_challenge();
+    }
+
+    pub(super) fn seek_all(&mut self, time: f64) {
+        self.service.seek(time);
+        if let Some(ref mut mv) = self.multiverse_service {
+            mv.seek(time);
+        }
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        if let Some(ref mv) = self.multiverse_service {
+            self.multiverse_presenter
+                .consume_snapshot(mv.scene(), mv.current_time());
+        }
         self.sync_active_challenge();
     }
 
@@ -108,19 +173,13 @@ impl KinemaGuiApp {
             };
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
-            self.service.step_forward();
-            self.presenter
-                .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.step_forward_all();
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
-            self.service.step_backward();
-            self.presenter
-                .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.step_backward_all();
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Home)) {
-            self.service.seek(0.0);
-            self.presenter
-                .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.seek_all(0.0);
         }
         if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) && self.service.undo() {
             self.status_text = "Undo successful.".to_string();

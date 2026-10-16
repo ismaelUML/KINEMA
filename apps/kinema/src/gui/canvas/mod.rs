@@ -2,7 +2,7 @@ mod entities;
 pub mod primitives;
 mod ropes;
 
-use super::KinemaGuiApp;
+use super::{KinemaGuiApp, MultiverseDisplayMode};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use kinema_adapter_ui::{GraphKind, UiBodyView, UiTheme};
 use kinema_domain::EntityKind;
@@ -46,6 +46,13 @@ impl KinemaGuiApp {
     }
 
     fn render_interactive_canvas(&mut self, ui: &mut egui::Ui, height: f32) {
+        if self.multiverse_mode == MultiverseDisplayMode::SplitScreen
+            && self.multiverse_service.is_some()
+        {
+            self.render_split_multiverse_canvas(ui, height);
+            return;
+        }
+
         let (response, painter) =
             ui.allocate_painter(Vec2::new(ui.available_width(), height), egui::Sense::drag());
 
@@ -101,6 +108,13 @@ impl KinemaGuiApp {
         self.paint_ropes(&ctx);
         // Draw interactive gizmos for selected entity
         self.render_active_gizmos(ui, &painter, origin_x, ground_y);
+
+        if self.multiverse_mode == MultiverseDisplayMode::GhostOverlay
+            && self.multiverse_service.is_some()
+        {
+            self.paint_ghost_overlay_bodies(&ctx);
+        }
+
         // Draw guided challenge HUD overlay if a challenge is active
         self.render_challenge_hud_overlay(ui, rect);
     }
@@ -234,11 +248,18 @@ impl KinemaGuiApp {
             });
     }
 
-    fn paint_bodies(&self, ctx: &PaintContext<'_>) {
-        let model = self.presenter.model();
+    fn paint_bodies_from_model(
+        &self,
+        ctx: &PaintContext<'_>,
+        model: &kinema_adapter_ui::UiViewModel,
+    ) {
         for (i, body) in model.bodies.iter().enumerate() {
             self.paint_entity(ctx, i, body);
         }
+    }
+
+    fn paint_bodies(&self, ctx: &PaintContext<'_>) {
+        self.paint_bodies_from_model(ctx, self.presenter.model());
         self.paint_meeting_markers(ctx);
     }
 
@@ -524,5 +545,197 @@ fn render_challenge_hud_content(ui: &mut egui::Ui, ch: &kinema_adapter_ui::UiCha
     });
     let progress = if ch.is_solved { 1.0 } else { ch.progress_ratio };
     ui.add(egui::ProgressBar::new(progress).show_percentage());
+}
+
+impl KinemaGuiApp {
+    fn render_split_multiverse_canvas(&mut self, ui: &mut egui::Ui, height: f32) {
+        let (response, painter) =
+            ui.allocate_painter(Vec2::new(ui.available_width(), height), egui::Sense::drag());
+        let rect = response.rect;
+
+        handle_canvas_pan_and_zoom(
+            &response,
+            ui,
+            &mut self.canvas_pan_x,
+            &mut self.canvas_pan_y,
+            &mut self.canvas_zoom,
+            rect,
+        );
+
+        let half_w = (rect.width() * 0.5).floor();
+        let left_rect = Rect::from_min_size(rect.min, Vec2::new(half_w - 2.0, rect.height()));
+        let right_rect = Rect::from_min_size(
+            Pos2::new(rect.min.x + half_w + 2.0, rect.min.y),
+            Vec2::new(half_w - 2.0, rect.height()),
+        );
+
+        let divider_x = rect.min.x + half_w;
+        let ground_y = rect.max.y - 45.0 + self.canvas_pan_y;
+
+        self.render_half_canvas(&painter, left_rect, ground_y, false);
+        self.render_half_canvas(&painter, right_rect, ground_y, true);
+
+        draw_split_screen_divider(&painter, rect, divider_x);
+        self.render_challenge_hud_overlay(ui, left_rect);
+    }
+
+    fn render_half_canvas(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        ground_y: f32,
+        is_multiverse_b: bool,
+    ) {
+        let theme = self.presenter.theme();
+        let bg_color = match theme {
+            UiTheme::Telemetry => Color32::from_rgb(10, 13, 20),
+            UiTheme::Classic => Color32::from_rgb(16, 20, 28),
+            UiTheme::Phosphor => Color32::from_rgb(8, 14, 8),
+            UiTheme::Amber => Color32::from_rgb(18, 12, 4),
+        };
+        painter.rect_filled(rect, egui::CornerRadius::ZERO, bg_color);
+
+        let origin_x = rect.min.x + self.canvas_pan_x;
+        if theme == UiTheme::Telemetry {
+            draw_telemetry_optical_grid(painter, rect, origin_x, ground_y, self.canvas_zoom);
+        }
+        draw_metric_track(painter, rect, origin_x, ground_y, self.canvas_zoom, theme);
+
+        let ctx = PaintContext {
+            painter,
+            rect,
+            origin_x,
+            ground_y,
+            zoom: self.canvas_zoom,
+        };
+        self.paint_half_canvas_contents(&ctx, is_multiverse_b);
+    }
+
+    fn paint_half_canvas_contents(&self, ctx: &PaintContext<'_>, is_multiverse_b: bool) {
+        if is_multiverse_b {
+            self.paint_bodies_from_model(ctx, self.multiverse_presenter.model());
+            draw_multiverse_badge(
+                ctx.painter,
+                ctx.rect,
+                &format!("🌌 WORLD B: {}", self.multiverse_label),
+                Color32::from_rgb(180, 80, 255),
+            );
+        } else {
+            self.paint_bodies_from_model(ctx, self.presenter.model());
+            self.paint_meeting_markers(ctx);
+            self.paint_ropes(ctx);
+            draw_multiverse_badge(
+                ctx.painter,
+                ctx.rect,
+                "🌐 WORLD A: BASELINE",
+                Color32::from_rgb(0, 220, 255),
+            );
+        }
+    }
+
+    fn paint_ghost_overlay_bodies(&self, ctx: &PaintContext<'_>) {
+        let model = self.multiverse_presenter.model();
+        let stroke = Stroke::new(1.5, Color32::from_rgba_unmultiplied(190, 80, 255, 200));
+        let fill = Color32::from_rgba_unmultiplied(160, 60, 240, 45);
+
+        for (i, body) in model.bodies.iter().enumerate() {
+            paint_single_ghost_body(ctx, i, body, stroke, fill);
+        }
+
+        draw_multiverse_badge(
+            ctx.painter,
+            ctx.rect,
+            &format!("👻 GHOST OVERLAY: WORLD B [{}]", self.multiverse_label),
+            Color32::from_rgb(210, 120, 255),
+        );
+    }
+}
+
+fn paint_single_ghost_body(
+    ctx: &PaintContext<'_>,
+    index: usize,
+    body: &UiBodyView,
+    stroke: Stroke,
+    fill: Color32,
+) {
+    let px = ctx.origin_x + (body.current_position as f32 * ctx.zoom);
+    if px < ctx.rect.min.x - 60.0 || px > ctx.rect.max.x + 60.0 {
+        return;
+    }
+    let lane = match body.kind {
+        EntityKind::Vehicle { lane } => lane,
+        _ => index,
+    };
+    let py = ctx.ground_y - 22.0 - (lane as f32 * 32.0);
+
+    let ghost_rect = Rect::from_min_size(Pos2::new(px, py + 6.0), Vec2::new(42.0, 14.0));
+    ctx.painter.rect(
+        ghost_rect,
+        egui::CornerRadius::same(3),
+        fill,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
+    ctx.painter
+        .circle(Pos2::new(px + 9.0, py + 20.0), 4.0, fill, stroke);
+    ctx.painter
+        .circle(Pos2::new(px + 33.0, py + 20.0), 4.0, fill, stroke);
+
+    ctx.painter.text(
+        Pos2::new(px + 21.0, py - 4.0),
+        egui::Align2::CENTER_BOTTOM,
+        format!("👻 {} (v={:.1}m/s)", body.name, body.current_velocity),
+        egui::FontId::monospace(9.0),
+        Color32::from_rgb(220, 150, 255),
+    );
+}
+
+fn draw_split_screen_divider(painter: &egui::Painter, rect: Rect, divider_x: f32) {
+    painter.line_segment(
+        [
+            Pos2::new(divider_x - 1.0, rect.min.y),
+            Pos2::new(divider_x - 1.0, rect.max.y),
+        ],
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 229, 255, 60)),
+    );
+    painter.line_segment(
+        [
+            Pos2::new(divider_x, rect.min.y),
+            Pos2::new(divider_x, rect.max.y),
+        ],
+        Stroke::new(2.0, Color32::from_rgb(0, 229, 255)),
+    );
+    painter.line_segment(
+        [
+            Pos2::new(divider_x + 1.0, rect.min.y),
+            Pos2::new(divider_x + 1.0, rect.max.y),
+        ],
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(180, 80, 255, 60)),
+    );
+}
+
+fn draw_multiverse_badge(painter: &egui::Painter, rect: Rect, text: &str, border_color: Color32) {
+    let badge_rect = Rect::from_min_size(
+        Pos2::new(rect.min.x + 12.0, rect.min.y + 12.0),
+        Vec2::new((text.len() as f32 * 7.5).max(120.0), 22.0),
+    );
+    painter.rect_filled(
+        badge_rect,
+        egui::CornerRadius::same(4),
+        Color32::from_rgba_premultiplied(14, 18, 28, 220),
+    );
+    painter.rect_stroke(
+        badge_rect,
+        egui::CornerRadius::same(4),
+        Stroke::new(1.2, border_color),
+        egui::StrokeKind::Inside,
+    );
+    painter.text(
+        badge_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        text,
+        egui::FontId::monospace(11.0),
+        border_color,
+    );
 }
 
