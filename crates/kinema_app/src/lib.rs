@@ -64,6 +64,12 @@ impl SimulationService {
         self.is_running
     }
 
+    pub fn load_custom_scene(&mut self, scene: Scene) {
+        self.push_undo();
+        self.time = 0.0;
+        self.scene = scene;
+    }
+
     /// Evaluates meeting between the first two bodies in the scene, if present.
     pub fn solve_two_body_meeting(&self) -> Option<MeetingOutcome> {
         // If we don't even have two bodies, there's nothing to collide or compare.
@@ -269,6 +275,15 @@ impl SceneEditing for SimulationService {
         } else {
             Err(format!("Body with ID '{}' not found", body_id))
         }
+    }
+
+    fn create_new_scene(&mut self, name: &str, gravity: f64) -> Result<(), String> {
+        self.push_undo();
+        self.time = 0.0;
+        let mut scene = Scene::new(name);
+        scene.gravity = if gravity >= 0.0 { gravity } else { 9.80665 };
+        self.scene = scene;
+        Ok(())
     }
 
     fn undo(&mut self) -> bool {

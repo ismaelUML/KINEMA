@@ -34,6 +34,13 @@ pub struct KinemaGuiApp {
     canvas_zoom: f32,
     fps_measured: f32,
     selected_body_id: Option<String>,
+    new_scene_open: bool,
+    new_scene_name: String,
+    new_scene_gravity: f64,
+    save_scene_open: bool,
+    save_scene_path: String,
+    load_scene_open: bool,
+    load_scene_path: String,
 }
 
 impl Default for KinemaGuiApp {
@@ -60,6 +67,13 @@ impl Default for KinemaGuiApp {
             canvas_zoom: 6.0,
             fps_measured: 60.0,
             selected_body_id: None,
+            new_scene_open: false,
+            new_scene_name: "Custom Experiment".to_string(),
+            new_scene_gravity: 9.80665,
+            save_scene_open: false,
+            save_scene_path: "experiment.kin".to_string(),
+            load_scene_open: false,
+            load_scene_path: "experiment.kin".to_string(),
         }
     }
 }
@@ -126,8 +140,20 @@ impl KinemaGuiApp {
             self.canvas_zoom = 6.0;
             self.status_text = "Camera reset to default view.".to_string();
         }
+        self.handle_file_shortcuts(ctx);
     }
 
+    fn handle_file_shortcuts(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::N)) {
+            self.new_scene_open = true;
+        }
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) {
+            self.save_scene_open = true;
+        }
+        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::O)) {
+            self.load_scene_open = true;
+        }
+    }
 }
 
 impl eframe::App for KinemaGuiApp {

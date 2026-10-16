@@ -22,6 +22,20 @@ impl KinemaGuiApp {
 
     fn render_file_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button("File", |ui| {
+            if ui.button("📄 New Scene... (Ctrl+N)").clicked() {
+                self.new_scene_open = true;
+            }
+            if ui.button("✨ Clear Scene (Empty Canvas)").clicked() {
+                self.create_new_scene("Blank Canvas", 9.80665);
+            }
+            ui.separator();
+            if ui.button("💾 Save Scene (.kin)... (Ctrl+S)").clicked() {
+                self.save_scene_open = true;
+            }
+            if ui.button("📂 Open Scene (.kin)... (Ctrl+O)").clicked() {
+                self.load_scene_open = true;
+            }
+            ui.separator();
             if ui.button("Export Canvas to PNG... (Ctrl+E)").clicked() {
                 self.export_current_canvas();
             }
@@ -266,6 +280,14 @@ fn render_zoom_toolbar_controls(ui: &mut egui::Ui, zoom: &mut f32, pan_x: &mut f
 }
 
 fn render_spawner_toolbar_controls(ui: &mut egui::Ui, app: &mut KinemaGuiApp) {
+    if ui
+        .button("📄 New Scene")
+        .on_hover_text("Create a new blank physics scene (Ctrl+N)")
+        .clicked()
+    {
+        app.new_scene_open = true;
+    }
+
     ui.menu_button("+ Spawn", |ui| {
         if ui.button("🚗 Vehicle (MRU: 15 m/s)").clicked() {
             app.spawn_vehicle_mru();
@@ -327,6 +349,16 @@ fn render_theme_toolbar_controls(
 }
 
 impl KinemaGuiApp {
+    pub(super) fn create_new_scene(&mut self, name: &str, gravity: f64) {
+        let _ = self.service.create_new_scene(name, gravity);
+        self.selected_body_id = None;
+        self.service.seek(0.0);
+        self.presenter
+            .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.status_text =
+            format!("Created new blank scene '{}' (g = {:.2} m/s²).", name, gravity);
+    }
+
     pub(super) fn delete_body(&mut self, id: &str) {
         let _ = self.service.remove_body(id);
         if self.selected_body_id.as_deref() == Some(id) {

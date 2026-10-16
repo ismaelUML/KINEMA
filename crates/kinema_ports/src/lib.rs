@@ -40,6 +40,7 @@ pub trait SceneEditing {
     fn edit_parameter(&mut self, body_id: &str, param: &str, value: f64) -> Result<(), String>;
     fn add_body(&mut self, body: Body) -> Result<(), String>;
     fn remove_body(&mut self, body_id: &str) -> Result<(), String>;
+    fn create_new_scene(&mut self, name: &str, gravity: f64) -> Result<(), String>;
     fn undo(&mut self) -> bool;
     fn redo(&mut self) -> bool;
 }

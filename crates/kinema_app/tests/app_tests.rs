@@ -396,3 +396,27 @@ fn test_scene_editing_add_and_remove_body() {
     assert!(service.redo());
     assert_eq!(service.scene().bodies.len(), 0);
 }
+
+#[test]
+fn test_scene_editing_create_new_scene() {
+    use kinema_domain::{Body, EntityKind, Mru};
+    use kinema_ports::SceneEditing;
+
+    let scene = Scene::new("Initial Scene");
+    let mut service = SimulationService::new(scene);
+    let car = Body::new("car1", "Car 1", Mru::new(0.0, 10.0)).with_kind(EntityKind::Vehicle { lane: 0 });
+    service.add_body(car).expect("add body");
+    assert_eq!(service.scene().bodies.len(), 1);
+
+    // Create new blank scene with lunar gravity
+    service.create_new_scene("Moon Lab", 1.62).expect("create new scene");
+    assert_eq!(service.scene().name, "Moon Lab");
+    assert_eq!(service.scene().gravity, 1.62);
+    assert_eq!(service.scene().bodies.len(), 0);
+
+    // Undo brings back the previous scene with the body
+    assert!(service.undo());
+    assert_eq!(service.scene().name, "Initial Scene");
+    assert_eq!(service.scene().bodies.len(), 1);
+}
+
