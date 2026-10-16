@@ -1,7 +1,9 @@
 use super::KinemaGuiApp;
 use eframe::egui;
 use kinema_adapter_ui::{GraphKind, UiTheme};
-use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl, SnapshotSink};
+use kinema_ports::{
+    ChallengeCatalog, ScenarioCatalog, SceneEditing, SimulationControl, SnapshotSink,
+};
 
 impl KinemaGuiApp {
     pub(super) fn render_menu_and_toolbar(&mut self, ui: &mut egui::Ui) {
@@ -10,6 +12,7 @@ impl KinemaGuiApp {
                 self.render_file_menu(ui);
                 self.render_edit_menu(ui);
                 self.render_entities_menu(ui);
+                self.render_challenges_menu(ui);
                 self.render_view_menu(ui);
                 self.render_simulate_menu(ui);
                 self.render_scene_catalog_menu(ui);
@@ -157,12 +160,61 @@ impl KinemaGuiApp {
             for scenario in list {
                 if ui.button(&scenario).clicked() {
                     let _ = self.service.load_scenario(&scenario);
+                    self.service.clear_active_challenge();
+                    self.sync_active_challenge();
                     self.presenter
                         .consume_snapshot(self.service.scene(), self.service.current_time());
                     self.status_text = format!("Scenario '{}' loaded.", scenario);
                 }
             }
         });
+    }
+
+    fn render_challenges_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Challenges", |ui| {
+            let challenges = self.service.list_challenges();
+            for ch in &challenges {
+                self.render_single_challenge_menu_item(ui, ch);
+            }
+            self.render_exit_challenge_button(ui);
+        });
+    }
+
+    fn render_single_challenge_menu_item(
+        &mut self,
+        ui: &mut egui::Ui,
+        ch: &kinema_ports::ChallengeSummary,
+    ) {
+        let is_active = self
+            .service
+            .active_challenge()
+            .map(|a| a.id == ch.id)
+            .unwrap_or(false);
+        let label = if is_active {
+            format!("🎯 {} [ACTIVE]", ch.title)
+        } else {
+            ch.title.clone()
+        };
+        if ui.button(label).clicked() {
+            let _ = self.service.load_challenge(&ch.id);
+            self.selected_body_id = None;
+            self.sync_active_challenge();
+            self.presenter
+                .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.status_text = format!("Challenge '{}' loaded.", ch.title);
+        }
+    }
+
+    fn render_exit_challenge_button(&mut self, ui: &mut egui::Ui) {
+        if self.service.active_challenge().is_none() {
+            return;
+        }
+        ui.separator();
+        if ui.button("❌ Exit Challenge Mode").clicked() {
+            self.service.clear_active_challenge();
+            self.sync_active_challenge();
+            self.status_text = "Exited challenge mode.".to_string();
+        }
     }
 
     fn render_help_menu(&mut self, ui: &mut egui::Ui) {
@@ -235,6 +287,7 @@ impl KinemaGuiApp {
             render_zoom_toolbar_controls(ui, &mut self.canvas_zoom, &mut self.canvas_pan_x);
             ui.separator();
             render_theme_toolbar_controls(ui, &mut self.presenter);
+            render_challenge_toolbar_badge(ui, self);
         });
     }
 
@@ -348,11 +401,36 @@ fn render_theme_toolbar_controls(
     }
 }
 
+fn render_challenge_toolbar_badge(ui: &mut egui::Ui, app: &KinemaGuiApp) {
+    if let Some(ref ch) = app.presenter.model().active_challenge_view {
+        ui.separator();
+        let badge_text = if ch.is_solved {
+            format!("🏆 SOLVED: {}", ch.title)
+        } else {
+            format!("🎯 CHALLENGE: {}", ch.title)
+        };
+        let color = if ch.is_solved {
+            egui::Color32::from_rgb(80, 240, 120)
+        } else {
+            egui::Color32::from_rgb(80, 180, 255)
+        };
+        ui.label(egui::RichText::new(badge_text).color(color).strong());
+    }
+}
+
 impl KinemaGuiApp {
+    pub(super) fn sync_active_challenge(&mut self) {
+        let status = self.service.evaluate_active_challenge();
+        self.presenter
+            .set_challenge(self.service.active_challenge(), status.as_ref());
+    }
+
     pub(super) fn create_new_scene(&mut self, name: &str, gravity: f64) {
         let _ = self.service.create_new_scene(name, gravity);
+        self.service.clear_active_challenge();
         self.selected_body_id = None;
         self.service.seek(0.0);
+        self.sync_active_challenge();
         self.presenter
             .consume_snapshot(self.service.scene(), self.service.current_time());
         self.status_text =

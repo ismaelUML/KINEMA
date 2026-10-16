@@ -1,11 +1,13 @@
 //! Application Layer / Use Case Orchestration.
 
 use kinema_domain::{
-    analyze_meeting, AtwoodMachine, BlockDynamics, Body, EntityKind, FreeBodyDiagram,
-    GravityPreset, MeetingOutcome, Motion, Motion1D, Mru, Mruv, Mvl, ParametricLaw, ParticleRope,
-    Scene, TablePulleySystem,
+    analyze_meeting, AtwoodMachine, BlockDynamics, Body, Challenge, ChallengeStatus, EntityKind,
+    FreeBodyDiagram, GravityPreset, MeetingOutcome, Motion, Motion1D, Mru, Mruv, Mvl,
+    ParametricLaw, ParticleRope, Scene, TablePulleySystem,
 };
-use kinema_ports::{ScenarioCatalog, SceneEditing, SimulationControl};
+use kinema_ports::{
+    ChallengeCatalog, ChallengeSummary, ScenarioCatalog, SceneEditing, SimulationControl,
+};
 
 /// Kinematic curve type for graphing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +38,8 @@ pub struct SimulationService {
     is_running: bool,
     undo_stack: Vec<Scene>,
     redo_stack: Vec<Scene>,
+    challenges: Vec<Challenge>,
+    active_challenge: Option<Challenge>,
 }
 
 impl SimulationService {
@@ -49,6 +53,8 @@ impl SimulationService {
             is_running: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            challenges: Challenge::catalog(),
+            active_challenge: None,
         }
     }
 
@@ -333,6 +339,45 @@ impl ScenarioCatalog for SimulationService {
         self.time = 0.0;
         self.scene = scene.clone();
         Ok(scene)
+    }
+}
+
+impl ChallengeCatalog for SimulationService {
+    fn list_challenges(&self) -> Vec<ChallengeSummary> {
+        self.challenges
+            .iter()
+            .map(|c| ChallengeSummary {
+                id: c.id.clone(),
+                title: c.title.clone(),
+                scenario_name: c.scenario_name.clone(),
+            })
+            .collect()
+    }
+
+    fn active_challenge(&self) -> Option<&Challenge> {
+        self.active_challenge.as_ref()
+    }
+
+    fn load_challenge(&mut self, id: &str) -> Result<Scene, String> {
+        let ch = self
+            .challenges
+            .iter()
+            .find(|c| c.id == id)
+            .cloned()
+            .ok_or_else(|| format!("Desafío '{}' no encontrado", id))?;
+        let scene = self.load_scenario(&ch.scenario_name)?;
+        self.active_challenge = Some(ch);
+        Ok(scene)
+    }
+
+    fn evaluate_active_challenge(&self) -> Option<ChallengeStatus> {
+        self.active_challenge
+            .as_ref()
+            .map(|c| c.evaluate(&self.scene))
+    }
+
+    fn clear_active_challenge(&mut self) {
+        self.active_challenge = None;
     }
 }
 

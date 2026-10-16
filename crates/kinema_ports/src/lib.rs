@@ -1,4 +1,4 @@
-use kinema_domain::{Body, Scene};
+use kinema_domain::{Body, Challenge, ChallengeStatus, Scene};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -49,6 +49,23 @@ pub trait SceneEditing {
 pub trait ScenarioCatalog {
     fn list_scenarios(&self) -> Vec<String>;
     fn load_scenario(&mut self, name: &str) -> Result<Scene, String>;
+}
+
+/// Summary of a physics challenge for UI presentation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChallengeSummary {
+    pub id: String,
+    pub title: String,
+    pub scenario_name: String,
+}
+
+/// Input Port: Guided challenges and lab scenarios.
+pub trait ChallengeCatalog {
+    fn list_challenges(&self) -> Vec<ChallengeSummary>;
+    fn active_challenge(&self) -> Option<&Challenge>;
+    fn load_challenge(&mut self, id: &str) -> Result<Scene, String>;
+    fn evaluate_active_challenge(&self) -> Option<ChallengeStatus>;
+    fn clear_active_challenge(&mut self);
 }
 
 /// Output Port: Scene persistence.

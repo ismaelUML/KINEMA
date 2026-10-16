@@ -1,7 +1,7 @@
 use kinema_domain::{
-    analyze_meeting, AtwoodMachine, Body, EntityKind, FreeBodyDiagram, FrictionState,
-    MeetingInstant, MeetingOutcome, Motion, Motion1D, ParametricLaw, ParticleRope, Scene,
-    TablePulleySystem,
+    analyze_meeting, AtwoodMachine, Body, Challenge, ChallengeStatus, EntityKind, FreeBodyDiagram,
+    FrictionState, MeetingInstant, MeetingOutcome, Motion, Motion1D, ParametricLaw, ParticleRope,
+    Scene, TablePulleySystem,
 };
 use kinema_ports::SnapshotSink;
 
@@ -128,6 +128,20 @@ pub struct UiGraphSeries {
     pub body_id: String,
     pub body_name: String,
     pub points: Vec<(f64, f64)>,
+}
+
+/// Guided challenge view for presentation on HUD and inspector.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UiChallengeView {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub objective: String,
+    pub hint: String,
+    pub status_text: String,
+    pub progress_ratio: f32,
+    pub is_solved: bool,
+    pub stars: u8,
 }
 
 /// Theme palette configuration according to Section 5.5.
@@ -264,6 +278,7 @@ pub struct UiViewModel {
     pub help_text: Option<String>,
     pub status_message: String,
     pub duration_hint: f64,
+    pub active_challenge_view: Option<UiChallengeView>,
 }
 
 impl Default for UiViewModel {
@@ -290,6 +305,7 @@ impl Default for UiViewModel {
             help_text: None,
             status_message: "Ready.".to_string(),
             duration_hint: 10.0,
+            active_challenge_view: None,
         }
     }
 }
@@ -347,6 +363,40 @@ impl UiPresenter {
         self.model.help_dialog_open = false;
         self.model.current_help_topic = None;
         self.model.help_text = None;
+    }
+
+    pub fn set_challenge(
+        &mut self,
+        challenge: Option<&Challenge>,
+        status: Option<&ChallengeStatus>,
+    ) {
+        self.model.active_challenge_view = challenge.map(|c| {
+            let (status_text, progress_ratio, is_solved, stars) = match status {
+                Some(ChallengeStatus::Solved { summary, stars }) => {
+                    (summary.clone(), 1.0, true, *stars)
+                }
+                Some(ChallengeStatus::InProgress {
+                    current_metric,
+                    progress_ratio,
+                }) => (current_metric.clone(), *progress_ratio, false, 0),
+                Some(ChallengeStatus::Failed { reason }) => {
+                    (format!("Fallido: {}", reason), 0.0, false, 0)
+                }
+                None => ("En curso...".to_string(), 0.0, false, 0),
+            };
+
+            UiChallengeView {
+                id: c.id.clone(),
+                title: c.title.clone(),
+                description: c.description.clone(),
+                objective: c.objective.clone(),
+                hint: c.hint.clone(),
+                status_text,
+                progress_ratio,
+                is_solved,
+                stars,
+            }
+        });
     }
 }
 

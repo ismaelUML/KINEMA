@@ -101,6 +101,8 @@ impl KinemaGuiApp {
         self.paint_ropes(&ctx);
         // Draw interactive gizmos for selected entity
         self.render_active_gizmos(ui, &painter, origin_x, ground_y);
+        // Draw guided challenge HUD overlay if a challenge is active
+        self.render_challenge_hud_overlay(ui, rect);
     }
 
     fn render_active_gizmos(
@@ -161,6 +163,7 @@ impl KinemaGuiApp {
             let _ = self.service.edit_parameter(&body.id, param_name, new_val);
             self.presenter
                 .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.sync_active_challenge();
             self.status_text =
                 format!("Moved {} to {} = {:.2}m", body.name, param_name, new_val);
         }
@@ -198,12 +201,37 @@ impl KinemaGuiApp {
             let _ = self.service.edit_parameter(&body.id, param_name, new_val);
             self.presenter
                 .consume_snapshot(self.service.scene(), self.service.current_time());
+            self.sync_active_challenge();
             self.status_text = format!(
                 "Adjusted {} to {} = {:.2}m/s",
                 body.name, param_name, new_val
             );
         }
         primitives::draw_velocity_gizmo(painter, center, resp.hovered(), resp.dragged());
+    }
+
+    fn render_challenge_hud_overlay(&mut self, ui: &mut egui::Ui, canvas_rect: egui::Rect) {
+        let Some(ref ch) = self.presenter.model().active_challenge_view else {
+            return;
+        };
+        let hud_width = 390.0;
+        let hud_rect = egui::Rect::from_min_size(
+            egui::pos2(canvas_rect.min.x + 14.0, canvas_rect.min.y + 14.0),
+            egui::vec2(hud_width, 130.0),
+        );
+        let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(hud_rect));
+        let border_color = if ch.is_solved {
+            egui::Color32::from_rgb(80, 240, 120)
+        } else {
+            egui::Color32::from_rgb(45, 140, 240)
+        };
+        egui::Frame::window(child_ui.style())
+            .fill(egui::Color32::from_rgba_premultiplied(12, 16, 24, 235))
+            .stroke(egui::Stroke::new(1.5, border_color))
+            .corner_radius(egui::CornerRadius::same(6))
+            .show(&mut child_ui, |ui| {
+                render_challenge_hud_content(ui, ch);
+            });
     }
 
     fn paint_bodies(&self, ctx: &PaintContext<'_>) {
@@ -469,3 +497,32 @@ fn check_entity_click(
     }
     None
 }
+
+fn render_challenge_hud_content(ui: &mut egui::Ui, ch: &kinema_adapter_ui::UiChallengeView) {
+    ui.horizontal(|ui| {
+        let title_badge = if ch.is_solved {
+            "🏆 ¡DESAFÍO COMPLETADO!"
+        } else {
+            "🎯 DESAFÍO ACTIVO"
+        };
+        let color = if ch.is_solved {
+            egui::Color32::from_rgb(80, 240, 120)
+        } else {
+            egui::Color32::from_rgb(70, 180, 255)
+        };
+        ui.label(egui::RichText::new(title_badge).color(color).strong());
+        if ch.is_solved {
+            ui.label(egui::RichText::new("⭐⭐⭐").color(egui::Color32::from_rgb(255, 215, 0)));
+        }
+    });
+    ui.label(egui::RichText::new(&ch.title).strong().size(13.0));
+    ui.label(egui::RichText::new(&ch.objective).small());
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Estado:").small().strong());
+        ui.label(egui::RichText::new(&ch.status_text).small());
+    });
+    let progress = if ch.is_solved { 1.0 } else { ch.progress_ratio };
+    ui.add(egui::ProgressBar::new(progress).show_percentage());
+}
+

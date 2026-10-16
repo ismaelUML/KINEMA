@@ -95,6 +95,7 @@ impl KinemaGuiApp {
         }
         self.presenter
             .consume_snapshot(self.service.scene(), self.service.current_time());
+        self.sync_active_challenge();
     }
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {

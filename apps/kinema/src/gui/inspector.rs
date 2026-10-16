@@ -2,7 +2,7 @@ use super::KinemaGuiApp;
 use eframe::egui;
 use kinema_adapter_ui::UiPresenter;
 use kinema_app::SimulationService;
-use kinema_ports::{SceneEditing, SnapshotSink};
+use kinema_ports::{ChallengeCatalog, SceneEditing, SnapshotSink};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BodyCardAction {
@@ -20,6 +20,7 @@ impl KinemaGuiApp {
                 ui.separator();
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    self.render_challenge_inspector(ui);
                     self.render_body_equations(ui);
                     ui.separator();
                     self.render_meeting_inspector(ui);
@@ -29,6 +30,33 @@ impl KinemaGuiApp {
                     self.render_fbd_inspector(ui);
                 });
             });
+    }
+
+    fn render_challenge_inspector(&self, ui: &mut egui::Ui) {
+        let Some(ref ch) = self.presenter.model().active_challenge_view else {
+            return;
+        };
+        ui.group(|ui| {
+            let header = if ch.is_solved {
+                "🏆 DESAFÍO RESUELTO"
+            } else {
+                "🎯 DESAFÍO EN CURSO"
+            };
+            let color = if ch.is_solved {
+                egui::Color32::from_rgb(80, 240, 120)
+            } else {
+                egui::Color32::from_rgb(70, 180, 255)
+            };
+            ui.label(egui::RichText::new(header).color(color).strong());
+            ui.label(egui::RichText::new(&ch.title).strong());
+            ui.label(egui::RichText::new(&ch.objective).small());
+            ui.separator();
+            ui.label(format!("Estado: {}", ch.status_text));
+            ui.collapsing("💡 Pista Teórica / Fórmulas", |ui| {
+                ui.monospace(&ch.hint);
+            });
+        });
+        ui.separator();
     }
 
     fn render_body_equations(&mut self, ui: &mut egui::Ui) {
@@ -159,6 +187,8 @@ fn render_single_param_row(
         let drag = make_param_drag_value(name, &mut val);
         if ui.add(drag).changed() {
             if let Ok(()) = service.edit_parameter(body_id, name, val) {
+                let status = service.evaluate_active_challenge();
+                presenter.set_challenge(service.active_challenge(), status.as_ref());
                 presenter.consume_snapshot(service.scene(), service.current_time());
                 *status_text = format!("Set {} of '{}' to {:.2}", name, body_id, val);
             }

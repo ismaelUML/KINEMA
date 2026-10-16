@@ -1,6 +1,7 @@
 //! Pure Core: Physics entities, laws, and meeting solvers.
 //! This crate contains zero external dependencies and depends solely on std.
 
+pub mod challenge;
 pub mod dynamics;
 pub mod meeting;
 pub mod motion;
@@ -8,6 +9,7 @@ pub mod pulley;
 pub mod rope;
 pub mod scene;
 
+pub use challenge::{Challenge, ChallengeCategory, ChallengeCondition, ChallengeStatus};
 pub use dynamics::{BlockDynamics, FreeBodyDiagram, FrictionState};
 pub use meeting::{
     analyze_meeting, analyze_mru_meeting, meeting_times, MeetingInstant, MeetingOutcome, Quadratic,
